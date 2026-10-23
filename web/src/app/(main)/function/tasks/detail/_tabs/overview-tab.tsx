@@ -7,8 +7,12 @@ import {
   AlertTriangleIcon,
   BugIcon,
   CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   ClockIcon,
   CoinsIcon,
+  EyeIcon,
+  EyeOffIcon,
   ListChecksIcon,
   PencilIcon,
   PlusIcon,
@@ -52,6 +56,33 @@ function fmtTokens(n: number): string {
 function cacheHitRate(cacheRead: number, input: number): string {
   if (input <= 0) return "—";
   return Math.round((cacheRead / input) * 100) + "%";
+}
+
+// 超长文本（任务描述/目标）的折叠阈值：不超过直接显示；超过默认收起成 6 行
+// 预览，点眼睛才展开全部——避免一整屏被超长描述拉长。
+const LONG_TEXT_THRESHOLD = 1000;
+
+function CollapsibleText({ text }: { text: string }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const trimmed = text.trim();
+  if (trimmed.length <= LONG_TEXT_THRESHOLD) {
+    return <p className="text-sm whitespace-pre-wrap break-words">{trimmed || "—"}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {/* 注意：line-clamp-6 必须是静态字面量，Tailwind 按源码扫描生成工具类。 */}
+      <p className={`text-sm whitespace-pre-wrap break-words ${expanded ? "" : "line-clamp-6"}`}>{trimmed}</p>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 w-fit gap-1 px-1.5 text-xs text-muted-foreground"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+        {expanded ? `收起（共 ${trimmed.length} 字）` : `显示全部（共 ${trimmed.length} 字）`}
+      </Button>
+    </div>
+  );
 }
 
 // 测试范围一条的显示值：域名 / 网段 / 公司。
@@ -124,6 +155,9 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const [scopeValueInput, setScopeValueInput] = React.useState("");
   const [scopeBusy, setScopeBusy] = React.useState(false);
   const [scopeErr, setScopeErr] = React.useState("");
+  // 测试范围分页：默认 20 条/页，可选 20/50/100——范围条数多时不再整页拉长。
+  const [scopePage, setScopePage] = React.useState(1);
+  const [scopePageSize, setScopePageSize] = React.useState(20);
   // 按模型的 token 用量（来自常开的 llm_usage 计量账本，逐次精确）。
   const [modelTokens, setModelTokens] = React.useState<ModelTokenStat[]>([]);
   // 目标管理：目标列表 + 新增表单 + 行内编辑状态。
@@ -442,11 +476,11 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <div className="text-xs font-medium text-muted-foreground">描述</div>
-            <p className="text-sm whitespace-pre-wrap break-words">{task?.description?.trim() || "—"}</p>
+            <CollapsibleText text={task?.description ?? ""} />
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="text-xs font-medium text-muted-foreground">目标</div>
-            <p className="text-sm whitespace-pre-wrap break-words">{task?.goal?.trim() || "—"}</p>
+            <CollapsibleText text={task?.goal ?? ""} />
           </div>
         </CardContent>
       </Card>
@@ -861,30 +895,79 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </Button>
             {scopeErr && <span className="text-xs text-red-500">{scopeErr}</span>}
           </div>
-          {/* 范围列表 */}
+          {/* 范围列表（分页：默认 20 条/页，可选 20/50/100） */}
           {scope.length > 0 ? (
             <div className="flex flex-col gap-1.5">
-              {scope.map((row) => (
-                <div key={row.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
-                  <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-xs">
-                    {SCOPE_KIND_LABELS[row.kind]}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{scopeValue(row)}</span>
-                  <span className="text-muted-foreground shrink-0 text-xs">{SCOPE_SOURCE_LABELS[row.source]}</span>
-                  {row.task_id.toString() === taskId ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-1.5"
-                      onClick={() => void removeScope(row)}
-                    >
-                      <Trash2Icon className="size-3.5 text-red-500" />
-                    </Button>
-                  ) : (
-                    <span className="text-muted-foreground shrink-0 text-xs">继承</span>
-                  )}
-                </div>
-              ))}
+              {(() => {
+                // 删除末页数据后自动收敛到新的最后一页（渲染期推导，无需 effect）。
+                const totalPages = Math.max(1, Math.ceil(scope.length / scopePageSize));
+                const page = Math.min(scopePage, totalPages);
+                const rows = scope.slice((page - 1) * scopePageSize, page * scopePageSize);
+                return (
+                  <>
+                    {rows.map((row) => (
+                      <div key={row.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
+                        <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-xs">
+                          {SCOPE_KIND_LABELS[row.kind]}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{scopeValue(row)}</span>
+                        <span className="text-muted-foreground shrink-0 text-xs">
+                          {SCOPE_SOURCE_LABELS[row.source]}
+                        </span>
+                        {row.task_id.toString() === taskId ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 shrink-0 px-1.5"
+                            onClick={() => void removeScope(row)}
+                          >
+                            <Trash2Icon className="size-3.5 text-red-500" />
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground shrink-0 text-xs">继承</span>
+                        )}
+                      </div>
+                    ))}
+                    {scope.length > scopePageSize && (
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+                        <span>
+                          第 {page} / {totalPages} 页 · 共 {scope.length} 条
+                        </span>
+                        <NativeSelect
+                          size="sm"
+                          value={String(scopePageSize)}
+                          onChange={(e) => {
+                            setScopePageSize(Number(e.target.value));
+                            setScopePage(1);
+                          }}
+                        >
+                          <NativeSelectOption value="20">20 条/页</NativeSelectOption>
+                          <NativeSelectOption value="50">50 条/页</NativeSelectOption>
+                          <NativeSelectOption value="100">100 条/页</NativeSelectOption>
+                        </NativeSelect>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-1.5"
+                          disabled={page <= 1}
+                          onClick={() => setScopePage(page - 1)}
+                        >
+                          <ChevronLeftIcon className="size-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-1.5"
+                          disabled={page >= totalPages}
+                          onClick={() => setScopePage(page + 1)}
+                        >
+                          <ChevronRightIcon className="size-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">暂无测试范围，添加后可作为资产覆盖度的分母。</p>
