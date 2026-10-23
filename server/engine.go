@@ -72,6 +72,11 @@ const (
 	modelErrorRetries      = 2               // model_error 收场后额外重试的次数
 	modelErrorRetryBackoff = 3 * time.Second // 每次重试前的退避
 	workControlWaitTimeout = 30 * time.Second
+	// 瞬时限流(429)自动恢复:意图标 rate_limited 后由 sweeper 在冷却期满时
+	// 自动重开回 frontier;期间该任务全部 worker 降速,避免把 frontier 烧穿。
+	rateLimitRetryDelay = 2 * time.Minute  // 限流 blocked 的自动重开冷却
+	rateLimitWorkerPause = 60 * time.Second // 撞限流后 worker 池的领取暂停
+	rateLimitSweepEvery = 30 * time.Second // sweeper 巡检间隔
 )
 
 var errWorkControlConflict = errors.New("work control conflict")
@@ -146,6 +151,10 @@ type Engine struct {
 	stamped      sync.Map // taskID -> bool, first_run_at 是否已盖章(本进程内只盖一次)
 	inflight     sync.Map // taskID -> *int64, 在跑的 planner.Plan + worker.Execute 计数(用于 drain)
 	coordStarted sync.Map // taskID -> bool, deadline 协调器是否已启动(Run/reload 去重)
+	// 瞬时限流自动恢复:rateLimited 记 taskID -> time.Time(领取暂停截止);
+	// rateSweepStarted 去重 sweeper 协程(Run/reload 只起一个,随任务 ctx 退出)。
+	rateLimited     sync.Map
+	rateSweepStarted sync.Map
 
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
@@ -488,6 +497,7 @@ func (e *Engine) StopTask(taskID string) {
 	e.stamped.Delete(taskID)
 	e.inflight.Delete(taskID)
 	e.coordStarted.Delete(taskID)
+	e.rateLimited.Delete(taskID)
 	e.deleteMu.Lock()
 	e.deleting.Delete(taskID)
 	e.deleteMu.Unlock()
@@ -990,6 +1000,7 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 	pool.desired = workers
 	e.spawnWorkersLocked(t, pool, workers)
 	pool.mu.Unlock()
+	e.startRateLimitSweeper(rt.ctx, t)
 	e.startDeadlineCoordinator(ctx, t) // 任务级超时定时器(仅 timeout>0;去重)
 	// 仅在「完全没有活动意图(open+running)」时才 kick 首轮规划。带种子意图的任务:种子已
 	// 是 open,或已被上面刚起的 worker 抢先 claim 成 running——两种都算「有活干」,一律跳过
@@ -999,6 +1010,41 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 	if has, _ := t.Store.HasActiveIntent(); !has {
 		t.Notify() // kick the first planning round (acted on once LLM is ready)
 	}
+}
+
+// startRateLimitSweeper 每任务一个(去重),随任务 ctx 退出。巡检 rate_limited
+// blocked 意图:冷却(rateLimitRetryDelay)期满即重开回 frontier 并唤醒 worker——
+// 瞬时限流自愈,无需人工重跑。暂停/删除中/终态只跳过本轮,状态恢复后继续巡。
+func (e *Engine) startRateLimitSweeper(ctx context.Context, t *Task) {
+	if _, loaded := e.rateSweepStarted.LoadOrStore(t.ID, true); loaded {
+		return
+	}
+	go func() {
+		defer e.rateSweepStarted.Delete(t.ID)
+		ticker := time.NewTicker(rateLimitSweepEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if e.IsDeleting(t.ID) || e.IsPaused(t.ID) || isTerminalStatus(e.m.TaskStatus(t.ID)) {
+				continue
+			}
+			reopened, err := t.Store.ReopenRateLimitedIntents(rateLimitRetryDelay)
+			if err != nil {
+				log.Printf("[rate-limit] task %s 巡检失败: %v", t.ID, err)
+				continue
+			}
+			if reopened > 0 {
+				log.Printf("[rate-limit] task %s 限流冷却结束,自动重开 %d 条意图", t.ID, reopened)
+				e.rateLimited.Delete(t.ID)
+				e.touch(t.ID)
+				t.Notify()
+			}
+		}
+	}()
 }
 
 // plannerHeartbeatInterval 解析任务的 planner 心跳间隔。db.CreateTask 已归一
@@ -1150,6 +1196,16 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, h *workerHandle) {
 			// workers 设置被调小:不再领取新意图,当前这轮跑完就从池中退出。
 			log.Printf("[worker %s] task %s 并发缩减,优雅退出", name, t.ID)
 			return
+		}
+		// 限流冷却:provider 正在 429,暂停领取——frontier 留给冷却结束后的重试,
+		// 而不是每条意图都白付一次 LLM 调用再进 blocked。
+		if until, ok := e.rateLimited.Load(t.ID); ok {
+			if u, valid := until.(time.Time); valid && time.Now().Before(u) {
+				if sleepCtx(ctx, 3*time.Second) {
+					return
+				}
+				continue
+			}
 		}
 		// 槽位 = 存活集合内的动态位次,每轮重算:伸缩/换血后位次自动收敛,
 		// worker LLM 分配计划(按"第 N 个 worker"分配)随之保持稳定语义。
@@ -1378,6 +1434,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	}
 	if state == "blocked" && isTaskLLMChainExhausted(err) {
 		_ = t.Store.SetIntentBlockedReason(intent.ID, db.IntentBlockedLLMQuota)
+	} else if state == "blocked" && isRateLimitError(err) {
+		// 瞬时限流(429):等窗口重置,冷却后由 sweeper 自动重开——不是终局。
+		_ = t.Store.SetIntentBlockedReason(intent.ID, db.IntentBlockedRateLimited)
+		e.rateLimited.Store(t.ID, time.Now().Add(rateLimitWorkerPause)) // 全池降速,别继续烧 frontier
 	} else {
 		if stateErr := transitionIntentState(t.Store, intent.ID, "running", state); stateErr != nil {
 			log.Printf("[worker %s] task %s 意图 #%d 终态 %s 落库失败: %v", name, t.ID, intent.ID, state, stateErr)

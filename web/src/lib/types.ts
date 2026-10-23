@@ -426,6 +426,7 @@ export interface TaskNode {
   source_task_id?: string;
   inherited?: boolean;
   delete_reason?: string; // 意图假删除(state='deleted')时的删除原因
+  blocked_reason?: string; // state=blocked 时的原因:rate_limited(限流,冷却后自动重试)/llm_quota_exhausted(额度,待换链)
 }
 
 // 播报板一页:按创建顺序分页的节点 + 这一页涉及的边 + 边另一端的节点(refs,按 id 索引),

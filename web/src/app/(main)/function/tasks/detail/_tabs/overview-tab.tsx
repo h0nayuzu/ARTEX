@@ -472,7 +472,11 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="flex items-center gap-2 text-sm">
               <AlertTriangleIcon className="size-4 text-red-500" /> 被拦/出错意图
-              <span className="text-xs font-normal text-muted-foreground">（共 {blocked.length} 条，可重跑）</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                （共 {blocked.length} 条
+                {blocked.some((i) => i.blocked_reason === "rate_limited") ? "，限流的会在冷却后自动重试" : ""}
+                ，可重跑）
+              </span>
             </CardTitle>
             <Button size="sm" variant="outline" disabled={rerunning.has("__all__")} onClick={() => void rerunAll()}>
               <RefreshCwIcon className={`size-3.5 ${rerunning.has("__all__") ? "animate-spin" : ""}`} />
@@ -483,6 +487,16 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             {blocked.slice(0, 20).map((i) => (
               <div key={i.id} className="flex items-center gap-2 text-sm">
                 <StatusBadge domain="intent" value={i.state} />
+                {i.blocked_reason === "rate_limited" && (
+                  <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    限流·冷却后自动重试
+                  </span>
+                )}
+                {i.blocked_reason === "llm_quota_exhausted" && (
+                  <span className="shrink-0 rounded bg-red-500/15 px-1.5 py-0.5 text-xs text-red-600 dark:text-red-400">
+                    额度耗尽·换链后自动重开
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate">{i.payload}</span>
                 <Button
                   size="sm"

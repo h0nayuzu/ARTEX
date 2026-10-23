@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -148,5 +149,33 @@ func TestProfileForSlot(t *testing.T) {
 	// 零配额条目被跳过
 	if got := profileForSlot([]db.WorkerLLMSlot{{ProfileID: 9, Slots: 0}, {ProfileID: 8, Slots: 1}}, 1); got != 8 {
 		t.Fatalf("zero-slot entry should be skipped, got %d", got)
+	}
+}
+
+// isRateLimitError:瞬时限流(429)识别——含用户实测的 Anthropic Token Plan 限流
+// 报文;与额度耗尽(走换链)区分开。
+func TestIsRateLimitError(t *testing.T) {
+	real := `anthropic: status 429: {"type":"error","error":{"type":"rate_limit_error","message":"已达到 Token Plan 速率限制：请升级 Token Plan 套餐或切换为按量付费 API 使用。 (2062)"},"request_id":"0728f2f0..."}`
+	for _, c := range []struct {
+		err  string
+		want bool
+	}{
+		{real, true},
+		{"anthropic: status 429: too many requests", true},
+		{"openai: Rate limit reached for requests", true},
+		{"HTTP 429", true},
+		{"请求过于频繁，请稍后再试", true},
+		{ "", false},
+		{"status 500: internal", false},
+		{"connection reset by peer", false},
+		{"status 401: invalid api key", false},
+		{"insufficient quota: billing balance", false}, // 额度耗尽走换链,不是限流
+	} {
+		if got := isRateLimitError(errors.New(c.err)); got != c.want {
+			t.Fatalf("isRateLimitError(%q)=%v want %v", c.err, got, c.want)
+		}
+	}
+	if isRateLimitError(nil) {
+		t.Fatal("nil error must not be rate limit")
 	}
 }

@@ -92,6 +92,26 @@ func isQuotaExhaustedError(err error) bool {
 	return err != nil && agent.IsQuotaExhaustedMessage(err.Error())
 }
 
+// isRateLimitError 报告"瞬时限流"(HTTP 429 / rate_limit / 请求过于频繁)。
+// 与额度耗尽(永久,走换链)不同,限流在窗口重置后自愈——意图标记为
+// rate_limited 由引擎的 sweeper 冷却后自动重开,worker 池同步降速,
+// 避免在限流窗口内把整个 frontier 烧成 blocked。
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, pat := range []string{
+		"status 429", "http 429", "429 too many", "rate limit", "rate_limit",
+		"ratelimit", "too many requests", "速率限制", "触发限流", "请求过于频繁", "请求频率过高",
+	} {
+		if strings.Contains(s, pat) {
+			return true
+		}
+	}
+	return false
+}
+
 type taskLLMSelection struct {
 	task      *Task
 	profileID int64

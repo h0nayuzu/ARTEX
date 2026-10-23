@@ -10,6 +10,13 @@ import (
 
 const IntentBlockedLLMQuota = "llm_quota_exhausted"
 
+// IntentBlockedRateLimited marks intents blocked by a TRANSIENT provider rate
+// limit (HTTP 429 / rate_limit_error). Unlike quota exhaustion these recover
+// by themselves after the rate window resets — a per-task sweeper in the
+// engine reopens them automatically after a cooldown, so the user never has
+// to rerun them by hand.
+const IntentBlockedRateLimited = "rate_limited"
+
 // TaskLLMProfile is one ordered entry in a task's explicit failover chain.
 type TaskLLMProfile struct {
 	ProfileID   int64      `json:"profile_id"`
@@ -570,6 +577,22 @@ func (s *ExplorationStore) ReopenIntentsByBlockedReason(reason string) (int64, e
 	res, err := s.db.Exec(`UPDATE exploration_nodes
 SET state='open', blocked_reason=NULL, completed_at=NULL
 WHERE exploration_id=$1 AND kind='intent' AND state='blocked' AND blocked_reason=$2`, s.expID, reason)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// ReopenRateLimitedIntents reopens intents blocked by transient rate limiting
+// whose block stamp (completed_at, set when the block was written) is older
+// than olderThan. Returns how many went back to the frontier.
+func (s *ExplorationStore) ReopenRateLimitedIntents(olderThan time.Duration) (int64, error) {
+	res, err := s.db.Exec(`UPDATE exploration_nodes
+SET state='open', blocked_reason=NULL, completed_at=NULL
+WHERE exploration_id=$1 AND kind='intent' AND state='blocked' AND blocked_reason=$2
+  AND completed_at <= now() - make_interval(secs => $3::double precision)`,
+		s.expID, IntentBlockedRateLimited, olderThan.Seconds())
 	if err != nil {
 		return 0, err
 	}
