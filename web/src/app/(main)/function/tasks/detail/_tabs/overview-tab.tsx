@@ -155,9 +155,9 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const [scopeValueInput, setScopeValueInput] = React.useState("");
   const [scopeBusy, setScopeBusy] = React.useState(false);
   const [scopeErr, setScopeErr] = React.useState("");
-  // 测试范围分页：默认 20 条/页，可选 20/50/100——范围条数多时不再整页拉长。
+  // 测试范围分页：默认 10 条/页，可选 10/50/100——范围条数多时不再整页拉长。
   const [scopePage, setScopePage] = React.useState(1);
-  const [scopePageSize, setScopePageSize] = React.useState(20);
+  const [scopePageSize, setScopePageSize] = React.useState(10);
   // 按模型的 token 用量（来自常开的 llm_usage 计量账本，逐次精确）。
   const [modelTokens, setModelTokens] = React.useState<ModelTokenStat[]>([]);
   // 目标管理：目标列表 + 新增表单 + 行内编辑状态。
@@ -895,7 +895,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </Button>
             {scopeErr && <span className="text-xs text-red-500">{scopeErr}</span>}
           </div>
-          {/* 范围列表（分页：默认 20 条/页，可选 20/50/100） */}
+          {/* 范围列表（分页：默认 10 条/页，可选 10/50/100） */}
           {scope.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {(() => {
@@ -941,7 +941,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
                             setScopePage(1);
                           }}
                         >
-                          <NativeSelectOption value="20">20 条/页</NativeSelectOption>
+                          <NativeSelectOption value="10">10 条/页</NativeSelectOption>
                           <NativeSelectOption value="50">50 条/页</NativeSelectOption>
                           <NativeSelectOption value="100">100 条/页</NativeSelectOption>
                         </NativeSelect>
