@@ -60,3 +60,6 @@ Thumbs.db
 /Dockerfile.bench.v2
 # JWT 签名密钥挂载目录（部署本地敏感文件，绝不提交）
 /keys/
+
+# 本地离线构建辅助(去掉 syntax 行,避免 buildkit 联网拉前端镜像)
+/Dockerfile.build
