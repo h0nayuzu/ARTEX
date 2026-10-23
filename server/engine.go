@@ -255,16 +255,15 @@ func runTaskRoutine(rt *taskRuntime, fn func(context.Context)) {
 }
 
 // workerHandle 是一个运行中 worker loop 的句柄。retire 置位后,worker 在跑完
-// 当前意图、回到循环顶时优雅退出(正在执行的意图绝不会被砍)。slot 是该 worker
-// 的槽位号(从 1 单调递增),用于任务级 LLM 分配计划把槽位固定到某个配置。
+// 当前意图、回到循环顶时优雅退出(正在执行的意图绝不会被砍)。
 type workerHandle struct {
 	name   string
-	slot   int
 	retire atomic.Bool
 }
 
 // workerPool 是任务的伸缩 worker 池。seq 单调递增仅用于命名(work#N);
-// workers 只收存活的句柄,worker 退出时自行从中移除。
+// workers 只收存活的句柄,worker 退出时自行从中移除。LLM 分配计划用的"槽位"
+// 不是 seq——是 rankOf 在存活句柄集合内动态计算的位次,伸缩/换血后自动收敛。
 type workerPool struct {
 	mu      sync.Mutex
 	desired int
@@ -272,12 +271,31 @@ type workerPool struct {
 	workers []*workerHandle
 }
 
-// registerPool 在 Run 的 started 检查之后登记任务的目标 worker 数(旧池若
-// 残留则覆盖)。紧随其后用 spawnInitialWorkers 起首批 worker。
-func (e *Engine) registerPool(taskID string, workers int) {
+// rankOfLocked 返回句柄在存活(non-retire)成员中的 1-based 位次;句柄已不在
+// 池中返回 0。调用方需持有 pool.mu。位次语义 = 分配计划里的"第 N 个 worker",
+// 因此缩容从队尾 retire(保留计划前缀)、扩容/换血后位次自动重排。
+func (p *workerPool) rankOfLocked(h *workerHandle) int {
+	rank := 0
+	for _, x := range p.workers {
+		if x.retire.Load() {
+			continue
+		}
+		rank++
+		if x == h {
+			return rank
+		}
+	}
+	return 0
+}
+
+// registerPool 在 Run 的 started 检查之后登记任务的 worker 池(旧池若残留则
+// 覆盖)。紧随其后 spawn 起首批 worker。
+func (e *Engine) registerPool(taskID string) *workerPool {
+	pool := &workerPool{}
 	e.runtimeMu.Lock()
-	e.pools[taskID] = &workerPool{desired: workers}
+	e.pools[taskID] = pool
 	e.runtimeMu.Unlock()
+	return pool
 }
 
 // spawnWorkersLocked 起n 个新 worker goroutine。调用方需持有 pool.mu。
@@ -294,7 +312,7 @@ func (e *Engine) spawnWorkersLocked(t *Task, pool *workerPool, n int) {
 		rt.wg.Add(1)
 		e.runtimeMu.Unlock()
 		pool.seq++
-		h := &workerHandle{name: fmt.Sprintf("work#%d", pool.seq), slot: pool.seq}
+		h := &workerHandle{name: fmt.Sprintf("work#%d", pool.seq)}
 		pool.workers = append(pool.workers, h)
 		runTaskRoutine(rt, func(loopCtx context.Context) {
 			defer e.retireWorkerFromPool(t.ID, h)
@@ -321,8 +339,23 @@ func (e *Engine) retireWorkerFromPool(taskID string, h *workerHandle) {
 	pool.mu.Unlock()
 }
 
-// rescalePool 把一个任务的 worker 池调到 n:活句柄不足则补,富余则给最靠后
-// 的超额句柄打 retire 标志(它们跑完当前意图即退出)。
+// workerRank 返回句柄的当前槽位位次(存活集合内的 1-based 序号);池或句柄
+// 不存在返回 0。
+func (e *Engine) workerRank(taskID string, h *workerHandle) int {
+	e.runtimeMu.Lock()
+	pool := e.pools[taskID]
+	e.runtimeMu.Unlock()
+	if pool == nil {
+		return 0
+	}
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.rankOfLocked(h)
+}
+
+// rescalePool 把一个任务的 worker 池调到 n:活句柄不足则补,富余则从队尾
+// (最高位次)开始打 retire 标志——保留计划前缀,worker LLM 分配的分布稳定;
+// 被标记的 worker 跑完当前意图即退出。
 func (e *Engine) rescalePool(t *Task, n int) {
 	e.runtimeMu.Lock()
 	pool := e.pools[t.ID]
@@ -347,10 +380,8 @@ func (e *Engine) rescalePool(t *Task, n int) {
 		e.spawnWorkersLocked(t, pool, n-live)
 	case live > n:
 		surplus := live - n
-		for _, h := range pool.workers {
-			if surplus == 0 {
-				break
-			}
+		for i := len(pool.workers) - 1; i >= 0 && surplus > 0; i-- {
+			h := pool.workers[i]
 			if !h.retire.Load() {
 				h.retire.Store(true)
 				surplus--
@@ -363,14 +394,11 @@ func (e *Engine) rescalePool(t *Task, n int) {
 // ApplyWorkers 把 workers 设置的变化立即作用到所有运行中的任务。对每个任务
 // 重算目标数:未设覆盖的任务跟到新全局值,设了覆盖的任务维持自己的值。
 // 在 SetWorkers 落库之后由设置 API 调用;对新任务无需处理(Run 每次都读当前值)。
-func (e *Engine) ApplyWorkers(n int) {
-	_ = n
+func (e *Engine) ApplyWorkers() {
 	e.runtimeMu.Lock()
-	ids := make([]string, 0, len(e.pools))
 	tasks := make([]*Task, 0, len(e.pools))
 	for id := range e.pools {
 		if t, ok := e.m.Task(id); ok {
-			ids = append(ids, id)
 			tasks = append(tasks, t)
 		}
 	}
@@ -921,9 +949,10 @@ func (e *Engine) ReadyFor(t *Task) bool {
 // workerFor resolves the worker agent for one worker slot. 任务配了 LLM 分配计划
 // 时,槽位落在某条配额内 → 返回绑定该配置的 worker(server 经 SetWorkerResolver
 // 注入);计划外/未配置 → 与 planner 同源的默认 worker(任务链/全局)。
-func (e *Engine) workerFor(t *Task, h *workerHandle) *agent.Worker {
-	if e.workerResolver != nil && h != nil {
-		if w := e.workerResolver(t, h.slot); w != nil {
+// rank 是该 worker 在存活集合内的 1-based 位次(每轮迭代重算,见 workerLoop)。
+func (e *Engine) workerFor(t *Task, rank int) *agent.Worker {
+	if e.workerResolver != nil && rank > 0 {
+		if w := e.workerResolver(t, rank); w != nil {
 			return w
 		}
 	}
@@ -935,7 +964,6 @@ func (e *Engine) workerFor(t *Task, h *workerHandle) *agent.Worker {
 // but no-op until an LLM is configured (so a task created while idle picks up
 // automatically once LLM is set from the UI).
 func (e *Engine) Run(ctx context.Context, t *Task) {
-	workers := e.m.TaskWorkers(t) // 任务级覆盖优先,否则全局设置
 	e.deleteMu.RLock()
 	if e.IsDeleting(t.ID) {
 		e.deleteMu.RUnlock()
@@ -947,11 +975,21 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 		return
 	}
 	rt := e.registerTaskRoutines(ctx, t.ID, 1) // planner;worker 由池按需 Add
+	// 池注册与 deleteMu 同临界区:StopTask 的删除屏障需要 deleteMu.Lock,
+	// 与本 RLock 互斥,杜绝"StopTask 清完 pools 后 Run 又写回孤儿条目"的窗口。
+	pool := e.registerPool(t.ID)
 	e.deleteMu.RUnlock()
 	e.touch(t.ID)
-	e.registerPool(t.ID, workers)
+	workers := e.m.TaskWorkers(t) // 注册后再读,消除与 PATCH workers 的窄竞态
 	runTaskRoutine(rt, func(loopCtx context.Context) { e.plannerLoop(loopCtx, t) })
-	e.rescalePool(t, workers) // 首批 worker(池刚登记,live=0 → 全量补齐)
+	// 首批 worker 直接 spawn(不走 rescalePool 的终态门):终态任务被打开查看时
+	// 也会注册池,若此处被终态门挡住,后续 revive(复活)路径因 started 已置位
+	// 提前返回,任务将永远没有 worker 领意图。workerLoop 自带终态空转门,
+	// 多起的 loop 与旧行为一致。
+	pool.mu.Lock()
+	pool.desired = workers
+	e.spawnWorkersLocked(t, pool, workers)
+	pool.mu.Unlock()
 	e.startDeadlineCoordinator(ctx, t) // 任务级超时定时器(仅 timeout>0;去重)
 	// 仅在「完全没有活动意图(open+running)」时才 kick 首轮规划。带种子意图的任务:种子已
 	// 是 open,或已被上面刚起的 worker 抢先 claim 成 running——两种都算「有活干」,一律跳过
@@ -1113,7 +1151,9 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, h *workerHandle) {
 			log.Printf("[worker %s] task %s 并发缩减,优雅退出", name, t.ID)
 			return
 		}
-		worker := e.workerFor(t, h)
+		// 槽位 = 存活集合内的动态位次,每轮重算:伸缩/换血后位次自动收敛,
+		// worker LLM 分配计划(按"第 N 个 worker"分配)随之保持稳定语义。
+		worker := e.workerFor(t, e.workerRank(t.ID, h))
 		if worker == nil {
 			if sleepCtx(ctx, 1500*time.Millisecond) {
 				return

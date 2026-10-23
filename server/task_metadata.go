@@ -13,6 +13,9 @@ import (
 const (
 	maxTaskNameRunes           = 200
 	maxTaskMetadataRequestSize = 16 << 10
+	// maxTaskWorkersOverride 上限与 worker_llm_plan 的 slots 上限一致:防误触
+	// 一次性 spawn 海量 goroutine(每个都走 LLM 解析/心跳)。
+	maxTaskWorkersOverride = 100
 )
 
 // updateTaskMetadata changes list-only task metadata. It intentionally does not
@@ -57,22 +60,18 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 		}
 		request.Name = &name
 	}
-	task, err := s.m.UpdateTaskMetadata(taskID, db.TaskPatch{Name: request.Name, Pinned: request.Pinned})
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if task == nil {
-		writeErr(w, http.StatusNotFound, "task not found")
-		return
-	}
-	// 任务级 worker 调度:与 name/pinned 同一个 PATCH,字段可选。
+	// 调度字段的校验全部前置:任何 400 都不留下"半提交"(name 已改而 workers 被拒)。
+	var schedPatch *db.TaskSchedulingPatch
 	if request.Workers != nil || request.WorkerLLMPlan != nil {
 		patch := db.TaskSchedulingPatch{}
 		if request.Workers != nil {
 			n := *request.Workers
 			if n == 0 || n < -1 {
 				writeErr(w, http.StatusBadRequest, "workers 需为 >=1 的并发数,或 -1 表示跟随全局")
+				return
+			}
+			if n > maxTaskWorkersOverride {
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("workers 最大 %d", maxTaskWorkersOverride))
 				return
 			}
 			patch.WorkersOverrideSet = true
@@ -95,7 +94,26 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 			patch.WorkerLLMPlanSet = true
 			patch.WorkerLLMPlan = request.WorkerLLMPlan
 		}
-		updated, err := s.m.UpdateTaskScheduling(taskID, patch)
+		schedPatch = &patch
+	}
+	// 只写有值的段:name/pinned 均缺省时跳过元数据 UPDATE,避免 no-op 写推进
+	// updated_at(tasks 表有 set_updated_at 触发器)。
+	var task *Task
+	if request.Name != nil || request.Pinned != nil {
+		var err error
+		task, err = s.m.UpdateTaskMetadata(taskID, db.TaskPatch{Name: request.Name, Pinned: request.Pinned})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if task == nil {
+			writeErr(w, http.StatusNotFound, "task not found")
+			return
+		}
+	}
+	// 任务级 worker 调度:与 name/pinned 同一个 PATCH,字段可选。
+	if schedPatch != nil {
+		updated, err := s.m.UpdateTaskScheduling(taskID, *schedPatch)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
@@ -104,12 +122,17 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, "task not found")
 			return
 		}
-		if patch.WorkersOverrideSet {
+		if schedPatch.WorkersOverrideSet {
 			s.engine.RescaleTask(taskID) // 立即按新并发数伸缩(热生效)
 		}
-		if patch.WorkerLLMPlanSet {
-			s.engine.ReassignTaskWorkers(taskID) // 槽位绑定在 spawn 时固定,换计划需优雅换血
+		if schedPatch.WorkerLLMPlanSet {
+			s.engine.ReassignTaskWorkers(taskID) // 槽位按位次动态解析,换血让存量意图跑完退出、新分配上线
 		}
+		if t, ok := s.m.Task(taskID); ok {
+			task = t
+		}
+	}
+	if task == nil {
 		if t, ok := s.m.Task(taskID); ok {
 			task = t
 		}

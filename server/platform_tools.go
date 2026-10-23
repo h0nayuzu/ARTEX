@@ -195,7 +195,7 @@ func toDBTool(a customToolToolInput) *db.Tool {
 }
 
 func (s *Server) toolCreateCustomTool() actool.CoreTool {
-	return wrTool("create_custom_tool", "【重要】当安装一些平台没有的工具时，调用该工具将安装的工具放入平台中，让平台可以调用！创建一个自定义工具(shell/command/script/http)。shell=bash 环境声明，只需 key+description+agents，无需 exec/schema。",
+	return wrTool("create_custom_tool", "【重要】当安装一些平台没有的工具时，调用该工具将安装的工具放入平台中，让平台可以调用！创建一个自定义工具(shell/http)。shell=bash 环境声明，只需 key+description+agents，无需 exec/schema；http=HTTP 请求工具，需 exec+schema。command/script(本地命令/脚本)类型只能由管理员在自定义工具页面配置。",
 		customToolSchema("工具 key(小写字母开头，字母/数字/下划线)"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a customToolToolInput
@@ -269,8 +269,7 @@ type mcpToolInput struct {
 func mcpSchema(withID bool) map[string]any {
 	props := map[string]any{
 		"name":      strParam("MCP 服务器名"),
-		"transport": strParam("stdio | http / sse"),
-		"command":   strParam("stdio 的启动命令(如 npx)"),
+		"transport": strParam("http / sse(远程服务;stdio 本地命令型只能由管理员在系统设置里配置)"),
 		"args":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "命令参数数组"},
 		"env":       map[string]any{"type": "object", "description": "环境变量 {KEY:VALUE}"},
 		"url":       strParam("http/sse 的 URL"),

@@ -75,11 +75,18 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
   const [workersBusy, setWorkersBusy] = React.useState(false);
   const [workersErr, setWorkersErr] = React.useState("");
 
-  // Worker LLM 分配（分布式调度）。
+  // Worker LLM 分配（分布式调度）。slots 用字符串草稿:数字输入在清空重输的
+  // 瞬间不该被强制回弹成 1,保存时再转换校验。
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
-  const [planRows, setPlanRows] = React.useState<{ profile_id: number; slots: number }[]>([]);
+  const [planRows, setPlanRows] = React.useState<{ profile_id: number; slots: string }[]>([]);
   const [planBusy, setPlanBusy] = React.useState(false);
   const [planErr, setPlanErr] = React.useState("");
+
+  // applyTask 只更新 task 本体,不动各卡片的草稿——保存一张卡不能清掉另一张
+  // 卡里未保存的编辑(轮询/挂载全量刷新才走 loadTask)。
+  const applyTask = React.useCallback((t: Task) => {
+    setTask(t);
+  }, []);
 
   const loadTask = React.useCallback(async () => {
     try {
@@ -88,9 +95,11 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
       setNameDraft(t.name ?? "");
       setWorkersMode(t.workers_override != null && t.workers_override > 0 ? "override" : "follow");
       setWorkersDraft(t.workers_override != null && t.workers_override > 0 ? String(t.workers_override) : "");
-      setPlanRows((t.worker_llm_plan ?? []).map((e) => ({ profile_id: Number(e.profile_id), slots: Number(e.slots) })));
+      setPlanRows(
+        (t.worker_llm_plan ?? []).map((e) => ({ profile_id: Number(e.profile_id), slots: String(e.slots) })),
+      );
     } catch {
-      // 忽略：瞬时错误，下次操作后重试
+      // 忽略：瞬时错误，下次轮询重试
     }
   }, [taskId]);
 
@@ -109,12 +118,28 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
   const effectiveWorkers =
     task?.workers_override != null && task.workers_override > 0 ? task.workers_override : globalWorkers;
 
+  // 已保存计划的规范化形状(与草稿可比对,做 dirty 检测)。
+  const savedPlanKey = React.useMemo(
+    () =>
+      JSON.stringify(
+        (task?.worker_llm_plan ?? []).map((e) => ({ profile_id: Number(e.profile_id), slots: Number(e.slots) })),
+      ),
+    [task],
+  );
+  const planDraftKey = React.useMemo(
+    () =>
+      JSON.stringify(
+        planRows.map((r) => ({ profile_id: r.profile_id, slots: Number(r.slots) || 0 })),
+      ),
+    [planRows],
+  );
+
   const saveWorkers = async () => {
     let n = -1; // 跟随全局
     if (workersMode === "override") {
       const v = Number(workersDraft);
-      if (!Number.isInteger(v) || v < 1) {
-        setWorkersErr("并发数必须是 >=1 的整数");
+      if (!Number.isInteger(v) || v < 1 || v > 100) {
+        setWorkersErr("并发数必须是 1..100 的整数");
         return;
       }
       n = v;
@@ -122,8 +147,10 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
     setWorkersBusy(true);
     setWorkersErr("");
     try {
-      await api.updateTask(taskId, { workers: n });
-      await loadTask();
+      const t = await api.updateTask(taskId, { workers: n });
+      applyTask(t);
+      setWorkersMode(t.workers_override != null && t.workers_override > 0 ? "override" : "follow");
+      setWorkersDraft(t.workers_override != null && t.workers_override > 0 ? String(t.workers_override) : "");
     } catch (e) {
       setWorkersErr(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -131,13 +158,25 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
     }
   };
 
-  const savePlan = async (rows: { profile_id: number; slots: number }[] | null) => {
+  const savePlan = async (rows: { profile_id: number; slots: string }[] | null) => {
+    const normalized: { profile_id: number; slots: number }[] = [];
+    for (const r of rows ?? []) {
+      const slots = Number(r.slots);
+      if (!Number.isInteger(slots) || slots < 1 || slots > 100) {
+        setPlanErr("每条分配的槽位数需为 1..100 的整数");
+        return;
+      }
+      normalized.push({ profile_id: r.profile_id, slots });
+    }
     setPlanBusy(true);
     setPlanErr("");
     try {
       // null=清空计划(发空数组),否则发行列表
-      await api.updateTask(taskId, { worker_llm_plan: rows ?? [] });
-      await loadTask();
+      const t = await api.updateTask(taskId, { worker_llm_plan: normalized });
+      applyTask(t);
+      setPlanRows(
+        (t.worker_llm_plan ?? []).map((e) => ({ profile_id: Number(e.profile_id), slots: String(e.slots) })),
+      );
     } catch (e) {
       setPlanErr(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -147,7 +186,7 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
 
   const saveName = async () => {
     const name = nameDraft.trim();
-    if (!name) return;
+    if (!name || name === (task?.name ?? "")) return;
     setNameBusy(true);
     setNameErr("");
     try {
@@ -347,6 +386,18 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
     void loadScope();
   }, [loadScope]);
 
+  // 低频轮询(10s):goal 状态随 planner 判定推进、agent 运行中可能新增 scope 行、
+  // 约束可能被对话流程改写——不轮询这些卡片会静止在首载画面,与总览页 3s 刷新
+  // 的数据(如 goals_met)自相矛盾。
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      void loadGoals();
+      void loadConstraints();
+      void loadScope();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [loadGoals, loadConstraints, loadScope]);
+
   const addScope = async () => {
     const value = scopeValueInput.trim();
     if (!value) return;
@@ -356,6 +407,8 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
       await api.addTaskScope(taskId, scopeKind, value);
       setScopeValueInput("");
       await loadScope();
+      // 新行落在列表末尾:跳到最后一页,让"添加成功"可见。
+      setScopePage(Number.MAX_SAFE_INTEGER);
     } catch (e) {
       setScopeErr(e instanceof Error ? e.message : "添加失败");
     } finally {
@@ -390,7 +443,11 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
             <NativeSelect
               size="sm"
               value={workersMode}
-              onChange={(e) => setWorkersMode(e.target.value as "follow" | "override")}
+              disabled={workersBusy}
+              onChange={(e) => {
+                setWorkersErr("");
+                setWorkersMode(e.target.value as "follow" | "override");
+              }}
             >
               <NativeSelectOption value="follow">跟随全局（当前 {globalWorkers}）</NativeSelectOption>
               <NativeSelectOption value="override">本任务单独设置</NativeSelectOption>
@@ -399,10 +456,14 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
               <Input
                 type="number"
                 min={1}
+                max={100}
                 className="h-8 w-24 text-sm"
                 placeholder="如 5"
                 value={workersDraft}
-                onChange={(e) => setWorkersDraft(e.target.value)}
+                onChange={(e) => {
+                  setWorkersErr("");
+                  setWorkersDraft(e.target.value);
+                }}
                 disabled={workersBusy}
               />
             )}
@@ -442,20 +503,21 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
             <div className="flex flex-col gap-1.5">
               {planRows.map((row, i) => {
                 let slotStart = 1;
-                for (let j = 0; j < i; j++) slotStart += planRows[j].slots;
+                for (let j = 0; j < i; j++) slotStart += Number(planRows[j].slots) || 0;
                 const p = profiles.find((x) => Number(x.id) === row.profile_id);
                 return (
-                  <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
+                  <div key={row.profile_id} className="flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
                     <span className="text-muted-foreground shrink-0 text-xs">work#{slotStart}</span>
                     <NativeSelect
                       size="sm"
                       className="min-w-44"
                       value={String(row.profile_id)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setPlanErr("");
                         setPlanRows((prev) =>
                           prev.map((r, j) => (j === i ? { ...r, profile_id: Number(e.target.value) } : r)),
-                        )
-                      }
+                        );
+                      }}
                     >
                       {profiles
                         .filter((x) => Number(x.id) === row.profile_id || !planRows.some((r) => r.profile_id === Number(x.id)))
@@ -470,11 +532,11 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
                       min={1}
                       className="h-7 w-20 text-sm"
                       value={row.slots}
-                      onChange={(e) =>
-                        setPlanRows((prev) =>
-                          prev.map((r, j) => (j === i ? { ...r, slots: Math.max(1, Number(e.target.value) || 1) } : r)),
-                        )
-                      }
+                      onChange={(e) => {
+                        setPlanErr("");
+                        // 字符串草稿:允许清空重输,保存时才校验转换。
+                        setPlanRows((prev) => prev.map((r, j) => (j === i ? { ...r, slots: e.target.value } : r)));
+                      }}
                       disabled={planBusy}
                     />
                     <span className="text-muted-foreground shrink-0 text-xs">
@@ -504,7 +566,7 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
               onClick={() => {
                 const used = new Set(planRows.map((r) => r.profile_id));
                 const free = profiles.find((x) => !used.has(Number(x.id)));
-                if (free) setPlanRows((prev) => [...prev, { profile_id: Number(free.id), slots: 1 }]);
+                if (free) setPlanRows((prev) => [...prev, { profile_id: Number(free.id), slots: "1" }]);
               }}
             >
               <PlusIcon className="size-3.5" /> 添加分配
@@ -514,7 +576,7 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={planBusy}
+                  disabled={planBusy || planDraftKey === savedPlanKey}
                   onClick={() => void savePlan(planRows)}
                 >
                   <CheckIcon className="size-3.5" /> 保存分配
@@ -530,7 +592,7 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
             <p className="text-muted-foreground text-xs">
               生效预览：work#1 起按上述顺序分配
               {(() => {
-                const total = planRows.reduce((a, r) => a + r.slots, 0);
+                const total = planRows.reduce((a, r) => a + (Number(r.slots) || 0), 0);
                 if (total < effectiveWorkers) {
                   return `，前 ${total} 个槽位固定，其余 ${effectiveWorkers - total} 个走配置链`;
                 }
@@ -933,11 +995,15 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
                         )}
                       </div>
                     ))}
-                    {scope.length > scopePageSize && (
+                    {scope.length > 10 && (
                       <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-                        <span>
-                          第 {page} / {totalPages} 页 · 共 {scope.length} 条
-                        </span>
+                        {totalPages > 1 && (
+                          <span>
+                            第 {page} / {totalPages} 页 · 共 {scope.length} 条
+                          </span>
+                        )}
+                        {/* 页长选择器独立于翻页按钮:切到 100 条/页后(只剩一页)也必须能切回,
+                            否则选择器随页脚一起消失造成死锁。 */}
                         <NativeSelect
                           size="sm"
                           value={String(scopePageSize)}
@@ -950,24 +1016,28 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
                           <NativeSelectOption value="50">50 条/页</NativeSelectOption>
                           <NativeSelectOption value="100">100 条/页</NativeSelectOption>
                         </NativeSelect>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 px-1.5"
-                          disabled={page <= 1}
-                          onClick={() => setScopePage(page - 1)}
-                        >
-                          上一页
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 px-1.5"
-                          disabled={page >= totalPages}
-                          onClick={() => setScopePage(page + 1)}
-                        >
-                          下一页
-                        </Button>
+                        {totalPages > 1 && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-1.5"
+                              disabled={page <= 1}
+                              onClick={() => setScopePage(page - 1)}
+                            >
+                              上一页
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-1.5"
+                              disabled={page >= totalPages}
+                              onClick={() => setScopePage(page + 1)}
+                            >
+                              下一页
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
                   </>

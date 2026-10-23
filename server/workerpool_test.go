@@ -48,6 +48,23 @@ func TestWorkerPoolScaleDownMarks(t *testing.T) {
 	if len(pool.workers) != 5 {
 		t.Fatalf("retired handles must stay until exit: len=%d", len(pool.workers))
 	}
+	// 缩容从队尾标记:保留的是前缀(位次语义,LLM 分配计划的前段槽位稳定)。
+	for i, h := range pool.workers {
+		wantRetired := i >= 2
+		if h.retire.Load() != wantRetired {
+			t.Fatalf("handle[%d] retire=%v, want %v(队尾先退)", i, h.retire.Load(), wantRetired)
+		}
+	}
+	// 位次:存活句柄按切片顺序 1..2。
+	if got := pool.rankOfLocked(pool.workers[0]); got != 1 {
+		t.Fatalf("rank of first live=%d, want 1", got)
+	}
+	if got := pool.rankOfLocked(pool.workers[1]); got != 2 {
+		t.Fatalf("rank of second live=%d, want 2", got)
+	}
+	if got := pool.rankOfLocked(pool.workers[4]); got != 0 {
+		t.Fatalf("rank of retired=%d, want 0", got)
+	}
 	e.rescalePool(task, 2) // 幂等:不会重复标记或误杀
 	if got := liveCount(pool); got != 2 {
 		t.Fatalf("after repeat live=%d, want 2", got)

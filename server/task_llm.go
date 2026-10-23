@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Autumn-27/artex/agent"
-	pgdb "github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/llmrec"
 	"github.com/Autumn-27/norma/llm"
@@ -131,12 +130,14 @@ func (r *taskLLMRuntime) current() (taskLLMSelection, error) {
 	t, _ := r.s.m.Task(r.taskID)
 	sel := taskLLMSelection{task: t, revision: pt.LLMChainRevision}
 	// 槽位绑定(分布式 worker 调度):固定用分配的配置,不参与链/故障转移。
+	// 注意不设 sel.profileID:该字段仅"走任务链"时才允许非零——streamTaskLLM
+	// 用它判断额度错误要不要推进任务链游标,pinned 槽位的额度错误必须直接
+	// 冒泡给本 worker 的意图,绝不能改写任务链状态(链是 planner/主 agent 的)。
 	if r.pinnedProfileID != nil {
 		prov, cfg, ok := r.s.providerForProfile(*r.pinnedProfileID)
 		if !ok {
 			return sel, fmt.Errorf("worker LLM 配置 #%d 已失效(被删除?)", *r.pinnedProfileID)
 		}
-		sel.profileID = *r.pinnedProfileID
 		sel.provider, sel.retry = prov, cfg.Retry
 		return sel, nil
 	}
@@ -478,6 +479,14 @@ func isRetryableStreamError(err error) bool {
 // CompactionWindow mirrors current()'s precedence so the context window always
 // matches the provider the role will actually stream on.
 func (r *taskLLMRuntime) CompactionWindow() int {
+	// 槽位绑定(分布式 worker):按 pinned 配置自身的窗口算,不用任务链最小值——
+	// pinned 到小上下文模型时按链(可能全是 200k)攒上下文会直接撞上限。
+	if r.pinnedProfileID != nil {
+		if _, cfg, ok := r.s.providerForProfile(*r.pinnedProfileID); ok {
+			return cfg.CompactionWindow()
+		}
+		return (agent.Config{}).CompactionWindow()
+	}
 	if _, cfg, ok := r.s.agentBindingProvider(r.agentKey); ok {
 		return cfg.CompactionWindow()
 	}
@@ -639,7 +648,7 @@ func (s *Server) newWorkerAgent(rt *taskLLMRuntime, tx *transcript.Store) *agent
 // profileForSlot 按分配计划把 1-based worker 槽位映射到 LLM 配置 id:顺序消耗
 // 各条配额,槽位落在配额内返回该条 profile_id;槽位超出计划总量(或无计划)
 // 返回 0(调用方回落到任务链/全局的默认 worker)。
-func profileForSlot(plan []pgdb.WorkerLLMSlot, slot int) int64 {
+func profileForSlot(plan []db.WorkerLLMSlot, slot int) int64 {
 	if slot <= 0 {
 		return 0
 	}
@@ -667,6 +676,11 @@ func (s *Server) workerForSlot(t *Task, slot int) *agent.Worker {
 	plan := t.lifecycleSnapshot().WorkerLLMPlan
 	pinned := profileForSlot(plan, slot)
 	if pinned <= 0 {
+		return nil
+	}
+	// 配置已失效(被删)→ 回落默认 worker,而不是绑定一个"每次调用都报错"的
+	// runtime 把意图粉碎:与"计划外槽位走链"同一语义,UI 会标"配置已失效"。
+	if _, _, ok := s.providerForProfile(pinned); !ok {
 		return nil
 	}
 	b := s.agentsForTask(t)

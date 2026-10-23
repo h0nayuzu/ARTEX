@@ -138,7 +138,8 @@ func taskDTO(t *Task, status string) TaskDTO {
 		CompanyIDs:         lifecycle.CompanyIDs,
 		CoverageEnabled:    t.CoverageEnabled,
 		WorkersOverride:    cloneIntPtr(lifecycle.WorkersOverride),
-		WorkerLLMPlan:      append([]db.WorkerLLMSlot(nil), lifecycle.WorkerLLMPlan...),
+		// 恒输出数组(空计划=[])而非 null,统一各序列化点的形状。
+		WorkerLLMPlan:      append(make([]db.WorkerLLMSlot, 0, len(lifecycle.WorkerLLMPlan)), lifecycle.WorkerLLMPlan...),
 	}
 }
 

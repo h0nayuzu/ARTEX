@@ -455,8 +455,8 @@ func (d *DB) UpdateTaskScheduling(id int64, p TaskSchedulingPatch) (*Task, error
 		planJSON = string(b)
 	}
 	task, err := scanTask(d.QueryRow(`UPDATE tasks SET
-	workers_override = CASE WHEN $2 THEN $3 ELSE workers_override END,
-	worker_llm_plan  = CASE WHEN $4 THEN $5::jsonb ELSE worker_llm_plan END
+	workers_override = CASE WHEN $2::boolean THEN $3 ELSE workers_override END,
+	worker_llm_plan  = CASE WHEN $4::boolean THEN $5::jsonb ELSE worker_llm_plan END
 WHERE id=$1 AND deleted_at IS NULL
 RETURNING `+taskCols, id, p.WorkersOverrideSet, p.WorkersOverride, p.WorkerLLMPlanSet, planJSON))
 	if err == sql.ErrNoRows {

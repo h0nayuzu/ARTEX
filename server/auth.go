@@ -64,6 +64,15 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, fmt.Errorf("create jwt key dir: %w", err)
 		}
+		// 密钥落在 dataDir(可浏览工作区)内 = 任何登录用户都能经文件管理器下载
+		// 到签名密钥、自铸管理员 token。不硬拒(可能有特殊布局),但必须大声警告。
+		if absKey, err1 := filepath.Abs(path); err1 == nil {
+			if absData, err2 := filepath.Abs(dataDir); err2 == nil {
+				if rel, err3 := filepath.Rel(absData, absKey); err3 == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					log.Printf("[auth] 警告: ARTEX_JWT_KEY_FILE=%s 位于可浏览工作区 %s 内,签名密钥可被文件管理器下载!请移到 data/ 之外", path, dataDir)
+				}
+			}
+		}
 	}
 	// one-time migration out of the old in-workspace location.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {

@@ -3456,7 +3456,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 立即作用于运行中的任务:扩容起新 worker,缩容跑完当前意图后优雅退出。
-		s.engine.ApplyWorkers(*req.Workers)
+		s.engine.ApplyWorkers()
 	}
 	if req.ConcurrencyEnabled != nil || req.ConcurrencyLimit != nil {
 		// 部分 PUT:未给的字段用当前值兜底,避免只改一个把另一个重置。

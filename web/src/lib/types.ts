@@ -37,8 +37,8 @@ export interface Task {
   llm_failover_reason?: string;
   /** 任务级 worker 并发覆盖;null/缺省=跟随全局 workers 设置 */
   workers_override?: number | null;
-  /** worker LLM 分配计划:按顺序把前若干 worker 槽位固定到指定配置;空=全部走 LLM 链 */
-  worker_llm_plan?: { profile_id: number; slots: number }[];
+  /** worker LLM 分配计划:按顺序把前若干 worker 槽位固定到指定配置;空=全部走 LLM 链(后端恒返回数组) */
+  worker_llm_plan?: { profile_id: number; slots: number }[] | null;
   source_task_ids?: string[]; // directly related tasks inherited as read-only context
   archive_blocked_by_task_id?: string; // live direct dependent that must be archived first
   company_ids?: number[]; // associated company scopes; current company assets join the task at creation
@@ -931,7 +931,7 @@ export interface Settings {
   // MITM 上游；关闭捕获时直接注入 agent 的 bash/WebFetch。空=直连。
   global_proxy?: string;
   python_interpreter?: string; // 自定义脚本工具的 python 解释器路径(空=运行时检测)
-  workers?: number; // 并发工作 agent 数(默认3)；对之后启动的任务生效
+  workers?: number; // 并发工作 agent 数(默认3)；保存后立即生效(运行中任务优雅增减)
   // 任务并发上限:同时「运行中」的任务数上限。关闭=不限;开启后新建任务超限则排队,有空位自动启动。
   task_concurrency_enabled?: boolean; // 默认 false
   task_concurrency_limit?: number; // 开启后默认 5
