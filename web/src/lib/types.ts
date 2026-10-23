@@ -35,6 +35,10 @@ export interface Task {
   active_llm_profile_id?: number; // profile used by the next LLM call
   llm_failover_state?: "default" | "ready" | "chain_exhausted" | string;
   llm_failover_reason?: string;
+  /** 任务级 worker 并发覆盖;null/缺省=跟随全局 workers 设置 */
+  workers_override?: number | null;
+  /** worker LLM 分配计划:按顺序把前若干 worker 槽位固定到指定配置;空=全部走 LLM 链 */
+  worker_llm_plan?: { profile_id: number; slots: number }[];
   source_task_ids?: string[]; // directly related tasks inherited as read-only context
   archive_blocked_by_task_id?: string; // live direct dependent that must be archived first
   company_ids?: number[]; // associated company scopes; current company assets join the task at creation

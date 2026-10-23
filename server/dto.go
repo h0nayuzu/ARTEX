@@ -61,6 +61,9 @@ type TaskDTO struct {
 	ArchiveBlockedBy   string             `json:"archive_blocked_by_task_id,omitempty"`
 	CompanyIDs         []int64            `json:"company_ids"`
 	CoverageEnabled    bool               `json:"coverage_enabled"` // 资产覆盖度功能开关(创建时定)
+	// 任务级 worker 调度:nil=跟随全局;计划为空=未分配(全部 worker 走 LLM 链)。
+	WorkersOverride *int                 `json:"workers_override,omitempty"`
+	WorkerLLMPlan   []db.WorkerLLMSlot   `json:"worker_llm_plan"`
 }
 
 // FindingSeverityDTO 是任务列表里按严重度分档的漏洞计数（严重/高/中/低）。
@@ -134,6 +137,8 @@ func taskDTO(t *Task, status string) TaskDTO {
 		SourceTaskIDs:      sourceIDs,
 		CompanyIDs:         lifecycle.CompanyIDs,
 		CoverageEnabled:    t.CoverageEnabled,
+		WorkersOverride:    cloneIntPtr(lifecycle.WorkersOverride),
+		WorkerLLMPlan:      append([]db.WorkerLLMSlot(nil), lifecycle.WorkerLLMPlan...),
 	}
 }
 

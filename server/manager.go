@@ -51,6 +51,11 @@ type Task struct {
 	LLMChainRevision   int64   `json:"-"`
 	LLMFailoverState   string  `json:"llm_failover_state,omitempty"`
 	LLMFailoverReason  string  `json:"llm_failover_reason,omitempty"`
+	// 任务级 worker 调度:WorkersOverride>0 时本任务固定该并发数(否则跟随全局
+	// workers 设置);WorkerLLMPlan 把前若干 worker 槽位按配额固定到各 LLM 配置
+	// (分布式 worker,planner/主 agent 仍走任务 LLM 链)。nil/空=未配置。
+	WorkersOverride *int                 `json:"workers_override,omitempty"`
+	WorkerLLMPlan   []pgdb.WorkerLLMSlot `json:"worker_llm_plan,omitempty"`
 	SourceTaskIDs      []int64 `json:"source_task_ids,omitempty"`
 	CompanyIDs         []int64 `json:"company_ids,omitempty"`
 	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout 为终态；空/其它则由运行态推导)
@@ -92,6 +97,9 @@ type taskLifecycleState struct {
 	CompanyIDs    []int64
 	CategoryID    *int64
 	CategoryName  string
+	// 任务级 worker 调度(可变,经 updateLifecycle 写入):并发覆盖与 LLM 分配计划。
+	WorkersOverride *int
+	WorkerLLMPlan   []pgdb.WorkerLLMSlot
 }
 
 func (t *Task) lifecycleSnapshot() taskLifecycleState {
@@ -119,6 +127,8 @@ func (t *Task) lifecycleSnapshotLocked() taskLifecycleState {
 		CompanyIDs:    append([]int64(nil), t.CompanyIDs...),
 		CategoryID:    cloneInt64Ptr(t.CategoryID),
 		CategoryName:  t.CategoryName,
+		WorkersOverride: cloneIntPtr(t.WorkersOverride),
+		WorkerLLMPlan:   append([]pgdb.WorkerLLMSlot(nil), t.WorkerLLMPlan...),
 	}
 }
 
@@ -143,6 +153,8 @@ func (t *Task) updateLifecycle(update func(*taskLifecycleState)) {
 	t.CompanyIDs = append(t.CompanyIDs[:0], state.CompanyIDs...)
 	t.CategoryID = cloneInt64Ptr(state.CategoryID)
 	t.CategoryName = state.CategoryName
+	t.WorkersOverride = cloneIntPtr(state.WorkersOverride)
+	t.WorkerLLMPlan = append(t.WorkerLLMPlan[:0], state.WorkerLLMPlan...)
 	t.lifecycleMu.Unlock()
 }
 
@@ -156,6 +168,14 @@ type taskLLMState struct {
 }
 
 func cloneInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneIntPtr(value *int) *int {
 	if value == nil {
 		return nil
 	}
@@ -845,6 +865,8 @@ func taskFromPG(pt *pgdb.Task, store *pgdb.ExplorationStore, ic *intercept.Inter
 		CompanyIDs:     append([]int64(nil), pt.CompanyIDs...),
 		TimeoutSeconds: pt.TimeoutSeconds, PlanHeartbeatSeconds: pt.PlanHeartbeatSeconds,
 		CoverageEnabled: pt.CoverageEnabled,
+		WorkersOverride: pt.WorkersOverride,
+		WorkerLLMPlan:   append([]pgdb.WorkerLLMSlot(nil), pt.WorkerLLMPlan...),
 		FirstRunAt:      unixOrZero(pt.FirstRunAt), DeadlineAt: unixOrZero(pt.DeadlineAt),
 		Store: store, Guard: guard.NewWithInterceptor(ic), notify: make(chan struct{}, 1),
 	}
@@ -872,6 +894,44 @@ func (m *Manager) UpdateTaskMetadata(taskID string, patch pgdb.TaskPatch) (*Task
 	task.updateLifecycle(func(state *taskLifecycleState) {
 		state.Name = updated.Name
 		state.PinnedAt = unixOrZero(updated.PinnedAt)
+	})
+	return task, nil
+}
+
+// TaskWorkers 返回单个任务的 worker 并发数:设了任务级覆盖(>0)用覆盖值,
+// 否则跟随全局 workers 设置。Run 启动与热调整(ApplyWorkers/RescaleTask)共用。
+func (m *Manager) TaskWorkers(t *Task) int {
+	if t != nil {
+		if v := t.lifecycleSnapshot().WorkersOverride; v != nil && *v > 0 {
+			return *v
+		}
+	}
+	return m.Workers()
+}
+
+// UpdateTaskScheduling persists per-task worker scheduling (并发覆盖 + LLM 分配
+// 计划) and mirrors it onto the live handle, so the very next LLM call / rescale
+// sees the new values.
+func (m *Manager) UpdateTaskScheduling(taskID string, patch pgdb.TaskSchedulingPatch) (*Task, error) {
+	m.taskStateMu.Lock()
+	defer m.taskStateMu.Unlock()
+	id, err := strconv.ParseInt(taskID, 10, 64)
+	if err != nil || id <= 0 {
+		return nil, nil
+	}
+	updated, err := m.pg.UpdateTaskScheduling(id, patch)
+	if err != nil || updated == nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	task := m.tasks[taskID]
+	m.mu.RUnlock()
+	if task == nil {
+		return nil, nil
+	}
+	task.updateLifecycle(func(state *taskLifecycleState) {
+		state.WorkersOverride = cloneIntPtr(updated.WorkersOverride)
+		state.WorkerLLMPlan = append([]pgdb.WorkerLLMSlot(nil), updated.WorkerLLMPlan...)
 	})
 	return task, nil
 }

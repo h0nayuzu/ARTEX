@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/Autumn-27/artex/db"
 )
 
 // 伸缩 worker 池的语义测试:改 workers 设置后,运行中的任务要能优雅增减——
@@ -104,5 +106,30 @@ func TestWorkerLoopExitsWhenRetired(t *testing.T) {
 		// 预期:立即返回
 	case <-time.After(2 * time.Second):
 		t.Fatal("retired worker did not exit")
+	}
+}
+
+// profileForSlot:分配计划的槽位映射——配额内命中对应配置,超出总量回落(0)。
+func TestProfileForSlot(t *testing.T) {
+	plan := []db.WorkerLLMSlot{
+		{ProfileID: 11, Slots: 2},
+		{ProfileID: 22, Slots: 3},
+	}
+	for _, c := range []struct {
+		slot int
+		want int64
+	}{
+		{1, 11}, {2, 11}, // 前两个槽位 → 配置 11
+		{3, 22}, {4, 22}, {5, 22}, // 接下来三个 → 配置 22
+		{6, 0}, {100, 0}, // 超出配额总量 → 走默认链
+		{0, 0}, {-5, 0}, // 非法槽位
+	} {
+		if got := profileForSlot(plan, c.slot); got != c.want {
+			t.Fatalf("slot %d: got %d want %d", c.slot, got, c.want)
+		}
+	}
+	// 零配额条目被跳过
+	if got := profileForSlot([]db.WorkerLLMSlot{{ProfileID: 9, Slots: 0}, {ProfileID: 8, Slots: 1}}, 1); got != 8 {
+		t.Fatalf("zero-slot entry should be skipped, got %d", got)
 	}
 }

@@ -4,6 +4,7 @@ import * as React from "react";
 
 import {
   CheckIcon,
+  GitBranchIcon,
   InfoIcon,
   ListChecksIcon,
   PencilIcon,
@@ -11,6 +12,7 @@ import {
   ShieldAlertIcon,
   ShieldCheckIcon,
   Trash2Icon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 
@@ -24,6 +26,7 @@ import { api } from "@/lib/api";
 import type {
   AssetInterceptKind,
   AssetInterceptRule,
+  LLMProfile,
   Task,
   TaskConstraint,
   TaskGoal,
@@ -65,11 +68,27 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
   const [nameBusy, setNameBusy] = React.useState(false);
   const [nameErr, setNameErr] = React.useState("");
 
+  // Worker 并发（本任务）：覆盖全局 workers 设置。
+  const [globalWorkers, setGlobalWorkers] = React.useState<number>(3);
+  const [workersMode, setWorkersMode] = React.useState<"follow" | "override">("follow");
+  const [workersDraft, setWorkersDraft] = React.useState("");
+  const [workersBusy, setWorkersBusy] = React.useState(false);
+  const [workersErr, setWorkersErr] = React.useState("");
+
+  // Worker LLM 分配（分布式调度）。
+  const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
+  const [planRows, setPlanRows] = React.useState<{ profile_id: number; slots: number }[]>([]);
+  const [planBusy, setPlanBusy] = React.useState(false);
+  const [planErr, setPlanErr] = React.useState("");
+
   const loadTask = React.useCallback(async () => {
     try {
       const t = await api.task(taskId);
       setTask(t);
       setNameDraft(t.name ?? "");
+      setWorkersMode(t.workers_override != null && t.workers_override > 0 ? "override" : "follow");
+      setWorkersDraft(t.workers_override != null && t.workers_override > 0 ? String(t.workers_override) : "");
+      setPlanRows((t.worker_llm_plan ?? []).map((e) => ({ profile_id: Number(e.profile_id), slots: Number(e.slots) })));
     } catch {
       // 忽略：瞬时错误，下次操作后重试
     }
@@ -77,7 +96,54 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
 
   React.useEffect(() => {
     void loadTask();
+    api
+      .settings()
+      .then((s) => setGlobalWorkers(Number(s.workers) || 3))
+      .catch(() => {});
+    api
+      .llmProfiles()
+      .then(setProfiles)
+      .catch(() => {});
   }, [loadTask]);
+
+  const effectiveWorkers =
+    task?.workers_override != null && task.workers_override > 0 ? task.workers_override : globalWorkers;
+
+  const saveWorkers = async () => {
+    let n = -1; // 跟随全局
+    if (workersMode === "override") {
+      const v = Number(workersDraft);
+      if (!Number.isInteger(v) || v < 1) {
+        setWorkersErr("并发数必须是 >=1 的整数");
+        return;
+      }
+      n = v;
+    }
+    setWorkersBusy(true);
+    setWorkersErr("");
+    try {
+      await api.updateTask(taskId, { workers: n });
+      await loadTask();
+    } catch (e) {
+      setWorkersErr(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setWorkersBusy(false);
+    }
+  };
+
+  const savePlan = async (rows: { profile_id: number; slots: number }[] | null) => {
+    setPlanBusy(true);
+    setPlanErr("");
+    try {
+      // null=清空计划(发空数组),否则发行列表
+      await api.updateTask(taskId, { worker_llm_plan: rows ?? [] });
+      await loadTask();
+    } catch (e) {
+      setPlanErr(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setPlanBusy(false);
+    }
+  };
 
   const saveName = async () => {
     const name = nameDraft.trim();
@@ -308,6 +374,173 @@ export function TaskSettingsSection({ taskId }: { taskId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Worker 并发（本任务）：默认跟随全局，可单独覆盖；保存后立即热生效。 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UsersIcon className="size-4 text-primary" /> Worker 并发（本任务）
+          </CardTitle>
+          <CardDescription>
+            默认跟随全局设置（当前 {globalWorkers}）；单独设置后只对本任务生效。保存后立即生效：扩容立即启动新
+            worker，缩减时正在执行的意图跑完后该 worker 才退出。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <NativeSelect
+              size="sm"
+              value={workersMode}
+              onChange={(e) => setWorkersMode(e.target.value as "follow" | "override")}
+            >
+              <NativeSelectOption value="follow">跟随全局（当前 {globalWorkers}）</NativeSelectOption>
+              <NativeSelectOption value="override">本任务单独设置</NativeSelectOption>
+            </NativeSelect>
+            {workersMode === "override" && (
+              <Input
+                type="number"
+                min={1}
+                className="h-8 w-24 text-sm"
+                placeholder="如 5"
+                value={workersDraft}
+                onChange={(e) => setWorkersDraft(e.target.value)}
+                disabled={workersBusy}
+              />
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                workersBusy ||
+                (workersMode === "override" && String(task?.workers_override ?? "") === workersDraft) ||
+                (workersMode === "follow" && (task?.workers_override == null || task.workers_override <= 0))
+              }
+              onClick={() => void saveWorkers()}
+            >
+              <CheckIcon className="size-3.5" /> 保存
+            </Button>
+            {workersErr && <span className="text-xs text-red-500">{workersErr}</span>}
+          </div>
+          <p className="text-muted-foreground text-xs">当前生效：{effectiveWorkers} 个并发 worker。</p>
+        </CardContent>
+      </Card>
+
+      {/* Worker LLM 分配：把 worker 槽位按配额固定到不同 LLM 配置（分布式调度）。
+          planner / 主 Agent / 目标判定不受影响，始终走任务 LLM 配置链（主配置）。 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GitBranchIcon className="size-4 text-primary" /> Worker LLM 分配（分布式）
+          </CardTitle>
+          <CardDescription>
+            未配置时全部 worker 走任务 LLM 配置链（顺序故障转移）。配置后按顺序把前若干 worker
+            槽位固定到所选配置——多个来源分摊并发，避开单来源并发上限；超出配额总量的槽位仍走配置链。
+            planner / 主 Agent 始终走配置链。保存后现有 worker 优雅换血到新分配。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {planRows.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {planRows.map((row, i) => {
+                let slotStart = 1;
+                for (let j = 0; j < i; j++) slotStart += planRows[j].slots;
+                const p = profiles.find((x) => Number(x.id) === row.profile_id);
+                return (
+                  <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
+                    <span className="text-muted-foreground shrink-0 text-xs">work#{slotStart}</span>
+                    <NativeSelect
+                      size="sm"
+                      className="min-w-44"
+                      value={String(row.profile_id)}
+                      onChange={(e) =>
+                        setPlanRows((prev) =>
+                          prev.map((r, j) => (j === i ? { ...r, profile_id: Number(e.target.value) } : r)),
+                        )
+                      }
+                    >
+                      {profiles
+                        .filter((x) => Number(x.id) === row.profile_id || !planRows.some((r) => r.profile_id === Number(x.id)))
+                        .map((x) => (
+                          <NativeSelectOption key={x.id} value={x.id}>
+                            {x.name} · {x.model}
+                          </NativeSelectOption>
+                        ))}
+                    </NativeSelect>
+                    <Input
+                      type="number"
+                      min={1}
+                      className="h-7 w-20 text-sm"
+                      value={row.slots}
+                      onChange={(e) =>
+                        setPlanRows((prev) =>
+                          prev.map((r, j) => (j === i ? { ...r, slots: Math.max(1, Number(e.target.value) || 1) } : r)),
+                        )
+                      }
+                      disabled={planBusy}
+                    />
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      个槽位{p ? "" : "（配置已失效）"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 shrink-0 px-1.5"
+                      disabled={planBusy}
+                      onClick={() => setPlanRows((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <Trash2Icon className="size-3.5 text-red-500" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">未配置：全部 worker 走任务 LLM 配置链（主配置）。</p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={planBusy || profiles.length === 0 || planRows.length >= profiles.length}
+              onClick={() => {
+                const used = new Set(planRows.map((r) => r.profile_id));
+                const free = profiles.find((x) => !used.has(Number(x.id)));
+                if (free) setPlanRows((prev) => [...prev, { profile_id: Number(free.id), slots: 1 }]);
+              }}
+            >
+              <PlusIcon className="size-3.5" /> 添加分配
+            </Button>
+            {planRows.length > 0 && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={planBusy}
+                  onClick={() => void savePlan(planRows)}
+                >
+                  <CheckIcon className="size-3.5" /> 保存分配
+                </Button>
+                <Button size="sm" variant="ghost" disabled={planBusy} onClick={() => void savePlan(null)}>
+                  清空
+                </Button>
+              </>
+            )}
+            {planErr && <span className="text-xs text-red-500">{planErr}</span>}
+          </div>
+          {planRows.length > 0 && (
+            <p className="text-muted-foreground text-xs">
+              生效预览：work#1 起按上述顺序分配
+              {(() => {
+                const total = planRows.reduce((a, r) => a + r.slots, 0);
+                if (total < effectiveWorkers) {
+                  return `，前 ${total} 个槽位固定，其余 ${effectiveWorkers - total} 个走配置链`;
+                }
+                return `（共 ${total} 个槽位，超出本任务并发数 ${effectiveWorkers} 的部分不生效）`;
+              })()}。
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* 任务信息：改名 / 置顶。描述与目标在总览置顶展示，这里不重复。 */}
       <Card>
         <CardHeader>

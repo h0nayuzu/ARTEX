@@ -47,9 +47,22 @@ type Task struct {
 	PlanHeartbeatSeconds int `json:"plan_heartbeat_seconds"`
 	// CoverageEnabled 是「资产覆盖度功能」总开关(默认 true)。false 时：不计算/不展示测试
 	// 覆盖度、不自动累积 task_scope(source=auto)、不给 agent 开放 add_task_scope/
-	// list_untested_assets、态势里不注入 coverage 块(scope 字段仍保留)。company 关联
+	// list_untested_assets、态势中不注入 coverage 块(scope 字段仍保留)。company 关联
 	// (task_scope kind=company)与此开关无关，永不受影响。见 db/task_scope.go。
 	CoverageEnabled bool `json:"coverage_enabled"`
+	// 任务级 worker 调度。WorkersOverride=nil 跟随全局 workers 设置;>0 则本任务
+	// 固定用该值(引擎热生效)。WorkerLLMPlan 把前若干 worker 槽位按配额固定到
+	// 指定 LLM 配置——多来源分摊并发,避开单源并发上限;超出配额总数与未列入
+	// 的槽位仍走任务 LLM 链(主配置)。
+	WorkersOverride *int             `json:"workers_override,omitempty"`
+	WorkerLLMPlan   []WorkerLLMSlot  `json:"worker_llm_plan,omitempty"`
+}
+
+// WorkerLLMSlot 是 worker LLM 分配计划的一条:把连续 Slots 个 worker 槽位固定
+// 到 ProfileID 对应的 LLM 配置。
+type WorkerLLMSlot struct {
+	ProfileID int64 `json:"profile_id"`
+	Slots     int   `json:"slots"`
 }
 
 // TaskDeleteResult reports optional related-data cleanup performed in the same
@@ -344,12 +357,19 @@ func insertTaskLLMProfiles(tx *sql.Tx, taskID int64, profileIDs []int64) error {
 
 const taskCols = `id, COALESCE(name,''), category_id,
 COALESCE((SELECT category.name FROM task_categories category WHERE category.id=tasks.category_id),''),
-description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at`
+description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at, workers_override, COALESCE(worker_llm_plan,'[]'::jsonb)`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
-	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt); err != nil {
+	var planBytes []byte
+	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt, &t.WorkersOverride, &planBytes); err != nil {
 		return nil, err
+	}
+	if len(planBytes) > 0 && string(planBytes) != "[]" && string(planBytes) != "null" {
+		var plan []WorkerLLMSlot
+		if err := json.Unmarshal(planBytes, &plan); err == nil && len(plan) > 0 {
+			t.WorkerLLMPlan = plan
+		}
 	}
 	t.Pinned = t.PinnedAt != nil
 	return &t, nil
@@ -406,6 +426,39 @@ func (d *DB) UpdateTask(id int64, patch TaskPatch) (*Task, error) {
 	END
 WHERE id=$1 AND deleted_at IS NULL
 RETURNING `+taskCols, id, patch.Name != nil, patch.Name, patch.Pinned))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+// TaskSchedulingPatch 更新任务级 worker 调度设置(部分更新:*Set=false 的字段
+// 保持原值)。WorkersOverride=nil 且 Set=true 表示清除覆盖、回到跟随全局。
+type TaskSchedulingPatch struct {
+	WorkersOverrideSet bool
+	WorkersOverride    *int
+	WorkerLLMPlanSet   bool
+	WorkerLLMPlan      []WorkerLLMSlot
+}
+
+// UpdateTaskScheduling applies a TaskSchedulingPatch and returns the updated row.
+func (d *DB) UpdateTaskScheduling(id int64, p TaskSchedulingPatch) (*Task, error) {
+	planJSON := "[]"
+	if p.WorkerLLMPlanSet && len(p.WorkerLLMPlan) > 0 {
+		b, err := json.Marshal(p.WorkerLLMPlan)
+		if err != nil {
+			return nil, err
+		}
+		planJSON = string(b)
+	}
+	task, err := scanTask(d.QueryRow(`UPDATE tasks SET
+	workers_override = CASE WHEN $2 THEN $3 ELSE workers_override END,
+	worker_llm_plan  = CASE WHEN $4 THEN $5::jsonb ELSE worker_llm_plan END
+WHERE id=$1 AND deleted_at IS NULL
+RETURNING `+taskCols, id, p.WorkersOverrideSet, p.WorkersOverride, p.WorkerLLMPlanSet, planJSON))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

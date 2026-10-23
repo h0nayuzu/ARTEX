@@ -165,6 +165,11 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		b := s.agentsForTask(t)
 		return b.pl, b.wk
 	})
+	// 分布式 worker 调度:任务配了 worker_llm_plan 时,落在配额内的槽位用绑定
+	// 该配置的专用 worker;计划外槽位返回 nil → 引擎回落到上面的默认 worker。
+	s.engine.SetWorkerResolver(func(t *Task, slot int) *agent.Worker {
+		return s.workerForSlot(t, slot)
+	})
 	// Global readiness (Ready()/llm_configured): a global active LLM provider is
 	// installed. Task-level runnability is separate (ReadyFor → the resolver above).
 	s.engine.SetReadiness(func() bool {

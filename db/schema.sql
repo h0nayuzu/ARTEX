@@ -557,6 +557,10 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES task_ca
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS active_llm_profile_id BIGINT REFERENCES llm_profiles(id) ON DELETE SET NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS llm_chain_revision BIGINT NOT NULL DEFAULT 0;
+-- 任务级 worker 调度:workers_override NULL=跟随全局 workers 设置;worker_llm_plan
+-- 把 worker 槽位按配额固定到各 LLM 配置(分布式 worker,planner/主 agent 仍走链)。
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workers_override INTEGER;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS worker_llm_plan JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category_id, created_at DESC)
     WHERE deleted_at IS NULL AND category_id IS NOT NULL;

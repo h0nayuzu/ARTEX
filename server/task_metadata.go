@@ -27,6 +27,10 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Name   *string `json:"name"`
 		Pinned *bool   `json:"pinned"`
+		// 任务级 worker 调度(可选):workers=-1 表示清除覆盖回到跟随全局,
+		// >=1 为本任务固定的并发数;worker_llm_plan 未给(nil)不变,空数组=清除。
+		Workers       *int              `json:"workers"`
+		WorkerLLMPlan []db.WorkerLLMSlot `json:"worker_llm_plan"`
 	}
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -37,8 +41,8 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if request.Name == nil && request.Pinned == nil {
-		writeErr(w, http.StatusBadRequest, "至少需要提供 name 或 pinned")
+	if request.Name == nil && request.Pinned == nil && request.Workers == nil && request.WorkerLLMPlan == nil {
+		writeErr(w, http.StatusBadRequest, "至少需要提供 name / pinned / workers / worker_llm_plan 之一")
 		return
 	}
 	if request.Name != nil {
@@ -61,6 +65,54 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 	if task == nil {
 		writeErr(w, http.StatusNotFound, "task not found")
 		return
+	}
+	// 任务级 worker 调度:与 name/pinned 同一个 PATCH,字段可选。
+	if request.Workers != nil || request.WorkerLLMPlan != nil {
+		patch := db.TaskSchedulingPatch{}
+		if request.Workers != nil {
+			n := *request.Workers
+			if n == 0 || n < -1 {
+				writeErr(w, http.StatusBadRequest, "workers 需为 >=1 的并发数,或 -1 表示跟随全局")
+				return
+			}
+			patch.WorkersOverrideSet = true
+			if n > 0 {
+				v := n
+				patch.WorkersOverride = &v
+			}
+		}
+		if request.WorkerLLMPlan != nil {
+			if len(request.WorkerLLMPlan) > 32 {
+				writeErr(w, http.StatusBadRequest, "worker_llm_plan 最多 32 条")
+				return
+			}
+			for _, e := range request.WorkerLLMPlan {
+				if e.ProfileID <= 0 || e.Slots < 1 || e.Slots > 100 {
+					writeErr(w, http.StatusBadRequest, "worker_llm_plan 每条需 profile_id>0 且 slots 在 1..100")
+					return
+				}
+			}
+			patch.WorkerLLMPlanSet = true
+			patch.WorkerLLMPlan = request.WorkerLLMPlan
+		}
+		updated, err := s.m.UpdateTaskScheduling(taskID, patch)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if updated == nil {
+			writeErr(w, http.StatusNotFound, "task not found")
+			return
+		}
+		if patch.WorkersOverrideSet {
+			s.engine.RescaleTask(taskID) // 立即按新并发数伸缩(热生效)
+		}
+		if patch.WorkerLLMPlanSet {
+			s.engine.ReassignTaskWorkers(taskID) // 槽位绑定在 spawn 时固定,换计划需优雅换血
+		}
+		if t, ok := s.m.Task(taskID); ok {
+			task = t
+		}
 	}
 	writeJSON(w, http.StatusOK, taskDTO(task, s.resolvedTaskStatus(task)))
 }

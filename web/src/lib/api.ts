@@ -276,7 +276,17 @@ export const api = {
       intercept_rules: input.interceptRules ?? [], // 任务级资产拦截规则
     }),
   taskCategories: () => get<{ categories: TaskCategory[] }>("/task-categories").then((r) => arr(r.categories)),
-  updateTask: (id: string, input: { name?: string; pinned?: boolean }) => patch<Task>(`/tasks/${id}`, input),
+  updateTask: (
+    id: string,
+    input: {
+      name?: string;
+      pinned?: boolean;
+      /** 任务级 worker 并发:-1=清除覆盖(跟随全局),>=1=本任务固定值 */
+      workers?: number;
+      /** worker LLM 分配计划:[] = 清除;未给 = 不变 */
+      worker_llm_plan?: { profile_id: number; slots: number }[];
+    },
+  ) => patch<Task>(`/tasks/${id}`, input),
   renameTask: (id: string, name: string) => patch<Task>(`/tasks/${id}`, { name }),
   pinTask: (id: string, pinned: boolean) => patch<Task>(`/tasks/${id}`, { pinned }),
   createTaskCategory: (name: string) => post<TaskCategory>("/task-categories", { name }),

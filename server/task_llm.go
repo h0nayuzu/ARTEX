@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Autumn-27/artex/agent"
+	pgdb "github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/llmrec"
 	"github.com/Autumn-27/norma/llm"
@@ -27,6 +28,10 @@ type taskAgentBundle struct {
 	pl             *agent.Planner
 	wk             *agent.Worker
 	main           *agent.MainAgent
+	tx             *transcript.Store
+	// slotWorkers 缓存"槽位绑定到某个 LLM 配置"的专用 worker(分布式 worker 调度)。
+	// 按 profileID 缓存:同配置的多个槽位共用一个 worker agent(无状态,可并发)。
+	slotWorkers map[int64]*agent.Worker
 }
 
 type llmAuditProfile struct {
@@ -51,6 +56,9 @@ type taskLLMRuntime struct {
 	s        *Server
 	taskID   string
 	agentKey string
+	// pinnedProfileID 非 nil 时(分布式 worker 调度),该 runtime 永远用这个配置,
+	// 不走 agent 绑定/任务链/全局的解析顺序——槽位绑定即固定。
+	pinnedProfileID *int64
 }
 
 type taskLLMError struct {
@@ -122,6 +130,16 @@ func (r *taskLLMRuntime) current() (taskLLMSelection, error) {
 	r.s.syncTaskLLMState(pt)
 	t, _ := r.s.m.Task(r.taskID)
 	sel := taskLLMSelection{task: t, revision: pt.LLMChainRevision}
+	// 槽位绑定(分布式 worker 调度):固定用分配的配置,不参与链/故障转移。
+	if r.pinnedProfileID != nil {
+		prov, cfg, ok := r.s.providerForProfile(*r.pinnedProfileID)
+		if !ok {
+			return sel, fmt.Errorf("worker LLM 配置 #%d 已失效(被删除?)", *r.pinnedProfileID)
+		}
+		sel.profileID = *r.pinnedProfileID
+		sel.provider, sel.retry = prov, cfg.Retry
+		return sel, nil
+	}
 	if prov, cfg, ok := r.s.agentBindingProvider(r.agentKey); ok {
 		sel.provider, sel.retry = prov, cfg.Retry
 		return sel, nil
@@ -158,6 +176,12 @@ func (r *taskLLMRuntime) activeCfg() (agent.Config, bool) {
 	}
 	pt, err := r.s.m.pg.GetTask(taskNum)
 	if err != nil || pt == nil {
+		return agent.Config{}, false
+	}
+	if r.pinnedProfileID != nil {
+		if _, cfg, ok := r.s.providerForProfile(*r.pinnedProfileID); ok {
+			return cfg, true
+		}
 		return agent.Config{}, false
 	}
 	if _, cfg, ok := r.s.agentBindingProvider(r.agentKey); ok {
@@ -560,17 +584,7 @@ func (s *Server) agentsForTask(t *Task) *taskAgentBundle {
 	workerRuntime := &taskLLMRuntime{s: s, taskID: t.ID, agentKey: "worker"}
 	mainRuntime := &taskLLMRuntime{s: s, taskID: t.ID, agentKey: "mainagent"}
 	tx := transcript.NewStore(filepath.Join(s.m.dir, "transcripts"))
-	window := workerRuntime.CompactionWindow()
-	wk := agent.NewWorker(workerRuntime, "task-router", s.m.dir, tx, window, s.agentMaxTurns("worker"))
-	wk.SetFindingRecorder(s.evidenceStore())
-	wk.SetCompactionWindowResolver(workerRuntime.CompactionWindow)
-	wk.SetNonStreaming(workerRuntime.nonStreaming) // 按任务当前激活 profile 的流式开关(每轮读)
-	wk.SetMaxTokens(workerRuntime.maxTokens)       // 同上,输出上限也跟随当前激活 profile
-	wk.SetNoaEnabled(s.m.NoaCompactionEnabled)     // 实验功能:noa 上下文压缩(平台级开关,每 run 读)
-	wk.SetRunTimeout(time.Duration(s.agentRunSeconds("worker")) * time.Second)
-	wk.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
-	wk.SetWebSearch(s.webSearchFor("worker"))
-	wk.SetConstraintInject(s.constraintInjectWorker) // 操作约束注入 worker(可配置,默认开)
+	wk := s.newWorkerAgent(workerRuntime, tx)
 	pl := agent.NewPlanner(plannerRuntime, "task-router", s.m.dir, tx, plannerRuntime.CompactionWindow(), s.agentMaxTurns("planner"))
 	pl.SetFindingRecorder(s.evidenceStore())
 	pl.SetCompactionWindowResolver(plannerRuntime.CompactionWindow)
@@ -598,9 +612,74 @@ func (s *Server) agentsForTask(t *Task) *taskAgentBundle {
 	bundle := &taskAgentBundle{
 		runtime: goalRuntime, plannerRuntime: plannerRuntime, workerRuntime: workerRuntime,
 		mainRuntime: mainRuntime, pl: pl, wk: wk, main: main,
+		tx:          tx,
+		slotWorkers: map[int64]*agent.Worker{},
 	}
 	s.taskAgents[t.ID] = bundle
 	return bundle
+}
+
+// newWorkerAgent builds one Worker agent over the given runtime with the standard
+// task-router wiring. The shared bundle worker and the slot-pinned workers
+// (分布式调度) use exactly the same construction — only the runtime differs.
+func (s *Server) newWorkerAgent(rt *taskLLMRuntime, tx *transcript.Store) *agent.Worker {
+	wk := agent.NewWorker(rt, "task-router", s.m.dir, tx, rt.CompactionWindow(), s.agentMaxTurns("worker"))
+	wk.SetFindingRecorder(s.evidenceStore())
+	wk.SetCompactionWindowResolver(rt.CompactionWindow)
+	wk.SetNonStreaming(rt.nonStreaming)   // 按当前生效 profile 的流式开关(每轮读)
+	wk.SetMaxTokens(rt.maxTokens)         // 同上,输出上限也跟随当前生效 profile
+	wk.SetNoaEnabled(s.m.NoaCompactionEnabled) // 实验功能:noa 上下文压缩(平台级开关,每 run 读)
+	wk.SetRunTimeout(time.Duration(s.agentRunSeconds("worker")) * time.Second)
+	wk.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
+	wk.SetWebSearch(s.webSearchFor("worker"))
+	wk.SetConstraintInject(s.constraintInjectWorker) // 操作约束注入 worker(可配置,默认开)
+	return wk
+}
+
+// profileForSlot 按分配计划把 1-based worker 槽位映射到 LLM 配置 id:顺序消耗
+// 各条配额,槽位落在配额内返回该条 profile_id;槽位超出计划总量(或无计划)
+// 返回 0(调用方回落到任务链/全局的默认 worker)。
+func profileForSlot(plan []pgdb.WorkerLLMSlot, slot int) int64 {
+	if slot <= 0 {
+		return 0
+	}
+	acc := 0
+	for _, e := range plan {
+		if e.Slots <= 0 {
+			continue
+		}
+		acc += e.Slots
+		if slot <= acc {
+			return e.ProfileID
+		}
+	}
+	return 0
+}
+
+// workerForSlot 把 worker 槽位解析到 LLM 配置(任务的 worker_llm_plan):按计划
+// 顺序消耗配额,槽位落在某条配额内 → 返回绑定该配置的专用 worker;计划外或
+// 未配置计划 → nil(调用方回落到任务链/全局的默认 worker)。同一配置的多个槽位
+// 共用一个 worker agent(agent 无会话状态,可安全并发)。
+func (s *Server) workerForSlot(t *Task, slot int) *agent.Worker {
+	if t == nil || slot <= 0 {
+		return nil
+	}
+	plan := t.lifecycleSnapshot().WorkerLLMPlan
+	pinned := profileForSlot(plan, slot)
+	if pinned <= 0 {
+		return nil
+	}
+	b := s.agentsForTask(t)
+	s.taskAgentMu.Lock()
+	defer s.taskAgentMu.Unlock()
+	if w := b.slotWorkers[pinned]; w != nil {
+		return w
+	}
+	id := pinned
+	rt := &taskLLMRuntime{s: s, taskID: t.ID, agentKey: "worker", pinnedProfileID: &id}
+	w := s.newWorkerAgent(rt, b.tx)
+	b.slotWorkers[pinned] = w
+	return w
 }
 
 func (s *Server) syncTaskLLMState(pt *db.Task) {

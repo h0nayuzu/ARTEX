@@ -152,9 +152,18 @@ type Engine struct {
 	// (for example an exhausted failover chain) — there is no global-pair fallback.
 	resolve              func(t *Task) (*agent.Planner, *agent.Worker)
 	resolveAuthoritative bool
+	// workerResolver optionally returns a slot-pinned worker agent (任务的 worker
+	// LLM 分配计划:槽位→固定配置)。nil 走 resolve 的默认 worker。Wired by server.
+	workerResolver func(t *Task, slot int) *agent.Worker
 	// readiness reports whether a global LLM provider is configured — the signal behind
 	// Ready()/the llm_configured indicator. Wired once at startup; nil → not ready.
 	readiness func() bool
+}
+
+// SetWorkerResolver installs the slot-pinned worker resolver (per-task worker
+// LLM 分配计划). nil keeps the default shared worker for every slot.
+func (e *Engine) SetWorkerResolver(fn func(t *Task, slot int) *agent.Worker) {
+	e.workerResolver = fn
 }
 
 type taskRuntime struct {
@@ -246,9 +255,11 @@ func runTaskRoutine(rt *taskRuntime, fn func(context.Context)) {
 }
 
 // workerHandle 是一个运行中 worker loop 的句柄。retire 置位后,worker 在跑完
-// 当前意图、回到循环顶时优雅退出(正在执行的意图绝不会被砍)。
+// 当前意图、回到循环顶时优雅退出(正在执行的意图绝不会被砍)。slot 是该 worker
+// 的槽位号(从 1 单调递增),用于任务级 LLM 分配计划把槽位固定到某个配置。
 type workerHandle struct {
 	name   string
+	slot   int
 	retire atomic.Bool
 }
 
@@ -283,7 +294,7 @@ func (e *Engine) spawnWorkersLocked(t *Task, pool *workerPool, n int) {
 		rt.wg.Add(1)
 		e.runtimeMu.Unlock()
 		pool.seq++
-		h := &workerHandle{name: fmt.Sprintf("work#%d", pool.seq)}
+		h := &workerHandle{name: fmt.Sprintf("work#%d", pool.seq), slot: pool.seq}
 		pool.workers = append(pool.workers, h)
 		runTaskRoutine(rt, func(loopCtx context.Context) {
 			defer e.retireWorkerFromPool(t.ID, h)
@@ -349,20 +360,59 @@ func (e *Engine) rescalePool(t *Task, n int) {
 	}
 }
 
-// ApplyWorkers 把新的并发工作 agent 数立即作用到所有运行中的任务。在
-// SetWorkers 落库之后由设置 API 调用;对新任务无需处理(Run 每次都读当前值)。
+// ApplyWorkers 把 workers 设置的变化立即作用到所有运行中的任务。对每个任务
+// 重算目标数:未设覆盖的任务跟到新全局值,设了覆盖的任务维持自己的值。
+// 在 SetWorkers 落库之后由设置 API 调用;对新任务无需处理(Run 每次都读当前值)。
 func (e *Engine) ApplyWorkers(n int) {
+	_ = n
 	e.runtimeMu.Lock()
 	ids := make([]string, 0, len(e.pools))
+	tasks := make([]*Task, 0, len(e.pools))
 	for id := range e.pools {
-		ids = append(ids, id)
-	}
-	e.runtimeMu.Unlock()
-	for _, id := range ids {
 		if t, ok := e.m.Task(id); ok {
-			e.rescalePool(t, n)
+			ids = append(ids, id)
+			tasks = append(tasks, t)
 		}
 	}
+	e.runtimeMu.Unlock()
+	for _, t := range tasks {
+		e.rescalePool(t, e.m.TaskWorkers(t))
+	}
+}
+
+// RescaleTask rescales one task to its effective worker count (override or
+// global). Called after the task's scheduling settings change.
+func (e *Engine) RescaleTask(taskID string) {
+	t, ok := e.m.Task(taskID)
+	if !ok {
+		return
+	}
+	e.rescalePool(t, e.m.TaskWorkers(t))
+}
+
+// ReassignTaskWorkers 让一个任务的全部 worker 优雅换血:存量 worker 跑完当前
+// 意图后退出,同时按目标数补齐新 worker(新 worker 按最新槽位分配解析 LLM)。
+// 用于任务的 worker LLM 分配计划变更——槽位绑定在 spawn 时固定,换计划只能换人。
+func (e *Engine) ReassignTaskWorkers(taskID string) {
+	t, ok := e.m.Task(taskID)
+	if !ok {
+		return
+	}
+	e.runtimeMu.Lock()
+	pool := e.pools[taskID]
+	e.runtimeMu.Unlock()
+	if pool == nil {
+		return
+	}
+	if e.IsDeleting(taskID) || isTerminalStatus(e.m.TaskStatus(taskID)) {
+		return
+	}
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	for _, h := range pool.workers {
+		h.retire.Store(true)
+	}
+	e.spawnWorkersLocked(t, pool, e.m.TaskWorkers(t))
 }
 
 // StopTask permanently stops every long-lived goroutine and removes all Engine
@@ -868,11 +918,24 @@ func (e *Engine) ReadyFor(t *Task) bool {
 	return p != nil && w != nil
 }
 
+// workerFor resolves the worker agent for one worker slot. 任务配了 LLM 分配计划
+// 时,槽位落在某条配额内 → 返回绑定该配置的 worker(server 经 SetWorkerResolver
+// 注入);计划外/未配置 → 与 planner 同源的默认 worker(任务链/全局)。
+func (e *Engine) workerFor(t *Task, h *workerHandle) *agent.Worker {
+	if e.workerResolver != nil && h != nil {
+		if w := e.workerResolver(t, h.slot); w != nil {
+			return w
+		}
+	}
+	_, w := e.snapshotFor(t)
+	return w
+}
+
 // Run starts the planner loop + N worker loops for a task. The loops always run
 // but no-op until an LLM is configured (so a task created while idle picks up
 // automatically once LLM is set from the UI).
 func (e *Engine) Run(ctx context.Context, t *Task) {
-	workers := e.m.Workers()
+	workers := e.m.TaskWorkers(t) // 任务级覆盖优先,否则全局设置
 	e.deleteMu.RLock()
 	if e.IsDeleting(t.ID) {
 		e.deleteMu.RUnlock()
@@ -1050,7 +1113,7 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, h *workerHandle) {
 			log.Printf("[worker %s] task %s 并发缩减,优雅退出", name, t.ID)
 			return
 		}
-		_, worker := e.snapshotFor(t)
+		worker := e.workerFor(t, h)
 		if worker == nil {
 			if sleepCtx(ctx, 1500*time.Millisecond) {
 				return
