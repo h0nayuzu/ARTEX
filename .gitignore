@@ -58,3 +58,5 @@ Thumbs.db
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2
+# JWT 签名密钥挂载目录（部署本地敏感文件，绝不提交）
+/keys/

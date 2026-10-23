@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -80,5 +81,40 @@ func TestValidatePassword(t *testing.T) {
 				t.Fatalf("validatePassword(%q)=%q, wantErr=%v", tc.pw, got, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestJWTKeyFileEnvOverride：ARTEX_JWT_KEY_FILE 必须把密钥定位到指定路径（容器
+// 部署把它指进挂载卷，容器重建不再轮换密钥踢掉全部会话）；不设时维持原行为。
+func TestJWTKeyFileEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := dir + "/keys/jwt.key"
+
+	t.Setenv("ARTEX_JWT_KEY_FILE", keyPath)
+	k1, err := loadOrCreateJWTKey("/nonexistent/basedir", dir)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(k1) < 32 {
+		t.Fatalf("key too short: %d", len(k1))
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatalf("key not written to env path: %v", err)
+	}
+	k2, err := loadOrCreateJWTKey("/nonexistent/basedir", dir)
+	if err != nil || string(k1) != string(k2) {
+		t.Fatalf("second call must reuse the same key: %v", err)
+	}
+
+	t.Setenv("ARTEX_JWT_KEY_FILE", "")
+	k3, err := loadOrCreateJWTKey(dir, dir) // 未设 env → keyDir/jwt.key
+	if err != nil {
+		t.Fatalf("default path: %v", err)
+	}
+	if _, err := os.Stat(dir + "/jwt.key"); err != nil {
+		t.Fatalf("default-path key not written: %v", err)
+	}
+	if string(k3) == string(k1) {
+		t.Fatal("default path key should be independent of the env-path key")
 	}
 }

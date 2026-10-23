@@ -52,8 +52,19 @@ func validatePassword(pw string) string {
 // at the new location, it is migrated (key preserved, so sessions stay valid) and
 // the old file removed so it disappears from the workspace. On first run a random
 // key is generated and persisted.
+//
+// Docker deployments: the default path lives in the container filesystem, so every
+// container recreation rotates the key and invalidates all sessions. Set
+// ARTEX_JWT_KEY_FILE to a path inside a mounted volume (but still OUTSIDE dataDir,
+// e.g. /app/keys/jwt.key with ./keys bind-mounted) to persist it across restarts.
 func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	path := filepath.Join(keyDir, jwtKeyFilename)
+	if p := strings.TrimSpace(os.Getenv("ARTEX_JWT_KEY_FILE")); p != "" {
+		path = p
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return nil, fmt.Errorf("create jwt key dir: %w", err)
+		}
+	}
 	// one-time migration out of the old in-workspace location.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
