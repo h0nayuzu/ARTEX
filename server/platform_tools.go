@@ -174,11 +174,11 @@ func customToolSchema(keyDesc string) map[string]any {
 	return objSchema(map[string]any{
 		"key":         strParam(keyDesc),
 		"description": strParam("发给模型的描述"),
-		"kind":        strParam("shell | command | script(仅Python) | http。shell=bash 环境声明(仅告知模型该工具可在 bash 中直接调用，无需 exec/schema)；其余三种需提供 exec"),
-		"exec":        map[string]any{"type": "object", "description": "执行规格(shell 类型不需要): command→{command}; script→{code}; http→{method,url,headers,body,proxy,use_recording_proxy}"},
-		"schema":      map[string]any{"type": "object", "description": "参数 JSON-Schema(shell/command/script 可留空; http 必填且需含 properties)"},
+		"kind":        strParam("shell | http。shell=bash 环境声明(仅告知模型该工具可在 bash 中直接调用，无需 exec/schema)；http=HTTP 请求工具(需 exec+schema)"),
+		"exec":        map[string]any{"type": "object", "description": "执行规格(http 需要): {method,url,headers,body,proxy,use_recording_proxy}"},
+		"schema":      map[string]any{"type": "object", "description": "参数 JSON-Schema(shell 可留空; http 必填且需含 properties)"},
 		"agents":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "绑定的 agent key(可选)"},
-		"deferred":    map[string]any{"type": "boolean", "description": "是否延迟(shell 类型无效；仅 command/script/http 的不常用工具才开)"},
+		"deferred":    map[string]any{"type": "boolean", "description": "是否延迟(仅 http 的不常用工具才开)"},
 		"enabled":     map[string]any{"type": "boolean", "description": "是否启用(默认 true)"},
 	}, "key", "kind")
 }
@@ -204,8 +204,12 @@ func (s *Server) toolCreateCustomTool() actool.CoreTool {
 			if !reToolKey.MatchString(a.Key) {
 				return actool.Errorf("key 需小写字母开头，仅含小写字母/数字/下划线"), nil
 			}
-			if a.Kind != "shell" && a.Kind != "command" && a.Kind != "script" && a.Kind != "http" {
-				return actool.Errorf("kind 需为 shell / command / script / http"), nil
+			// command/script 类型会在宿主机执行 bash/python。平台工具无审批门(恒
+			// Allowed)，任务中被渗透目标的提示注入可借"创建并调用"绕过 Bash 的
+			// AskUser 审批落地任意命令(RCE)。本地执行型工具只能由管理员经认证后的
+			// HTTP API/UI 配置。
+			if a.Kind != "shell" && a.Kind != "http" {
+				return actool.Errorf("agent 只能创建 shell / http 类型自定义工具；command/script(本地命令/脚本)请由管理员在自定义工具页面添加"), nil
 			}
 			if a.Kind == "http" && !hasSchemaProps(a.Schema) {
 				return actool.Errorf("http 工具必须提供参数 JSON Schema(不能留空)"), nil
@@ -230,8 +234,13 @@ func (s *Server) toolUpdateCustomTool() actool.CoreTool {
 			if existing == nil || existing.System {
 				return actool.Errorf("只能修改自定义工具: " + a.Key), nil
 			}
-			if a.Kind != "shell" && a.Kind != "command" && a.Kind != "script" && a.Kind != "http" {
-				return actool.Errorf("kind 需为 shell / command / script / http"), nil
+			if a.Kind != "shell" && a.Kind != "http" {
+				return actool.Errorf("agent 只能创建/修改 shell / http 类型自定义工具"), nil
+			}
+			// 防劫持：管理员建好的 command/script 工具，其 exec 载荷(要执行的命令/
+			// 脚本)不允许被 agent 改写，否则免审批执行链等于重新打开。
+			if existing.Kind == "command" || existing.Kind == "script" {
+				return actool.Errorf("command/script(本地命令/脚本)型工具只能由管理员修改"), nil
 			}
 			if a.Kind == "http" && !hasSchemaProps(a.Schema) {
 				return actool.Errorf("http 工具必须提供参数 JSON Schema(不能留空)"), nil
@@ -292,7 +301,7 @@ func (a mcpToolInput) toDB() *db.MCPServer {
 }
 
 func (s *Server) toolCreateMCP() actool.CoreTool {
-	return wrTool("create_mcp", "创建一个 MCP 服务器(stdio/http/sse)。创建后其工具需按 agent 可见性授权。",
+	return wrTool("create_mcp", "创建一个 MCP 服务器(http/sse 远程服务)。创建后其工具需按 agent 可见性授权。",
 		mcpSchema(false),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a mcpToolInput
@@ -300,6 +309,12 @@ func (s *Server) toolCreateMCP() actool.CoreTool {
 			a.ID = 0
 			if strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.Transport) == "" {
 				return actool.Errorf("name / transport 必填"), nil
+			}
+			// stdio MCP = 连接时在宿主机 exec 任意 command。该工具无审批门(平台工具
+			// 恒 Allowed)，任务中被渗透目标的提示注入可借它落地任意命令(RCE)。
+			// 本地进程型 MCP 只允许管理员经认证后的 HTTP API/UI 配置。
+			if a.Transport == "stdio" {
+				return actool.Errorf("agent 不能创建 stdio(本地命令)型 MCP 服务器——请在系统设置的 MCP 页面由管理员添加"), nil
 			}
 			id, err := s.m.pg.SaveMCP(a.toDB())
 			if err != nil {
@@ -317,6 +332,29 @@ func (s *Server) toolUpdateMCP() actool.CoreTool {
 			_ = json.Unmarshal(in, &a)
 			if a.ID == 0 {
 				return actool.Errorf("id 必填"), nil
+			}
+			if a.Transport == "stdio" {
+				return actool.Errorf("agent 不能把 MCP 服务器改为 stdio(本地命令)型"), nil
+			}
+			// 防劫持：已授权的 stdio server(如内置 browser MCP 的 npx 命令)一旦被
+			// 改成任意 command，任何可见它的会话装配时都会执行该命令。agent 侧一律
+			// 不允许改动 stdio 行，修改请走管理员 API/UI。
+			servers, err := s.m.pg.ListMCP()
+			if err != nil {
+				return actool.Errorf(err.Error()), nil
+			}
+			var existing *db.MCPServer
+			for _, m := range servers {
+				if m.ID == a.ID {
+					existing = m
+					break
+				}
+			}
+			if existing == nil {
+				return actool.Errorf(fmt.Sprintf("MCP 服务器不存在: id=%d", a.ID)), nil
+			}
+			if existing.Transport == "stdio" {
+				return actool.Errorf("stdio(本地命令)型 MCP 服务器只能由管理员修改"), nil
 			}
 			if _, err := s.m.pg.SaveMCP(a.toDB()); err != nil {
 				return actool.Errorf(err.Error()), nil
