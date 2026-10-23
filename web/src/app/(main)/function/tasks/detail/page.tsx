@@ -46,6 +46,7 @@ import { FindingsTab } from "./_tabs/findings-tab";
 import { GraphTab } from "./_tabs/graph-tab";
 import { InterceptTab } from "./_tabs/intercept-tab";
 import { OverviewTab } from "./_tabs/overview-tab";
+import { TaskSettingsTab } from "./_tabs/settings-tab";
 import { ReportTab } from "./_tabs/report-tab";
 import { RetestsTab } from "./_tabs/retests-tab";
 import { SessionsTab } from "./_tabs/sessions-tab";
@@ -53,6 +54,7 @@ import { SessionsTab } from "./_tabs/sessions-tab";
 const TABS = [
   { value: "sessions", label: "会话" },
   { value: "overview", label: "总览" },
+  { value: "settings", label: "设置" },
   { value: "graph", label: "探索链路" },
   { value: "broadcast", label: "播报板" },
   { value: "findings", label: "发现" },
@@ -422,6 +424,9 @@ function TaskDetailInner() {
         </TabsContent>
         <TabsContent value="overview" className="mt-0">
           <OverviewTab taskId={id} />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-0">
+          <TaskSettingsTab taskId={id} />
         </TabsContent>
         <TabsContent value="graph" className="mt-0">
           <GraphTab taskId={id} />
