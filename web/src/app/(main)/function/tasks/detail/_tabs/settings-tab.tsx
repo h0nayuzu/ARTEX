@@ -30,8 +30,8 @@ import type {
   TaskScopeRow,
 } from "@/lib/types";
 
-// 任务设置 tab：只放"属于这个项目"的配置——任务信息（改名/置顶）、目标管理、
-// 操作约束、任务级资产拦截、测试范围。从总览拆出来，让总览只看运行状态。
+// 项目设置区：渲染在总览页底部,只放"属于这个项目"的配置——任务信息（改名/
+// 置顶）、目标管理、操作约束、任务级资产拦截、测试范围。上方总览只看运行状态。
 
 // 测试范围一条的显示值：域名 / 网段 / 公司。
 function scopeValue(row: TaskScopeRow): string {
@@ -58,7 +58,7 @@ const SCOPE_SOURCE_LABELS: Record<TaskScopeRow["source"], string> = {
   manual: "手动",
 };
 
-export function TaskSettingsTab({ taskId }: { taskId: string }) {
+export function TaskSettingsSection({ taskId }: { taskId: string }) {
   // 任务信息（改名 / 置顶）。
   const [task, setTask] = React.useState<Task | null>(null);
   const [nameDraft, setNameDraft] = React.useState("");

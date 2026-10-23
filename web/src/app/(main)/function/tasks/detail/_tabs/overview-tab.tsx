@@ -11,6 +11,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   RefreshCwIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   TargetIcon,
 } from "lucide-react";
@@ -22,8 +23,11 @@ import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 import type { Finding, ModelTokenStat, Stats, Task, TaskNode } from "@/lib/types";
 
-// 总览只看运行状态：描述/目标回看、覆盖度、Token 用量、心跳、进行中意图与被拦
-// 意览。任务级配置（目标管理/操作约束/资产拦截/测试范围/任务信息）在「设置」tab。
+import { TaskSettingsSection } from "./settings-tab";
+
+// 总览上半部分只看运行状态：描述/目标回看、覆盖度、Token 用量、心跳、进行中
+// 意图与被拦意图。页面底部是「项目设置」区（任务信息/目标管理/操作约束/资产
+// 拦截/测试范围）——同一页内先看状态、往下再改配置。
 
 // 紧凑格式化 token 数（12345 → 12.3k，2000000 → 2M）。
 function fmtTokens(n: number): string {
@@ -506,6 +510,14 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         <StatCard label="待领意图" value={open.length} icon={ShieldCheckIcon} sub="frontier 开放" />
         <StatCard label="确认发现" value={taskFindings.length} icon={BugIcon} sub="本任务" />
         <StatCard label="意图总数" value={intents.length} icon={AlertTriangleIcon} sub="本任务全部意图" />
+      </div>
+
+      {/* 项目设置：总览底部的任务级配置区（与上方运行状态之间留出明显分界）。 */}
+      <div className="border-t pt-4">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <SettingsIcon className="size-4" /> 项目设置
+        </h2>
+        <TaskSettingsSection taskId={taskId} />
       </div>
     </div>
   );
