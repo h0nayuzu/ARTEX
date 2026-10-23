@@ -113,6 +113,10 @@ type Engine struct {
 	// waits for all goroutines, then releases every task-level Engine reference.
 	runtimeMu sync.Mutex
 	runtimes  map[string]*taskRuntime
+	// pools 是每个任务的伸缩 worker 池(engine.Run 注册,StopTask 注销)。改
+	// workers 设置时经 ApplyWorkers 对所有活任务 rescale:扩容立即起新 worker,
+	// 缩容由超额 worker 跑完当前意图后自行退出——运行中的任务无需重启容器。
+	pools map[string]*workerPool
 
 	// per-task execution context: each planner.Plan / worker.Execute runs under it,
 	// so pausing can CANCEL an in-flight run (not just skip the next one). Recreated
@@ -241,6 +245,126 @@ func runTaskRoutine(rt *taskRuntime, fn func(context.Context)) {
 	}()
 }
 
+// workerHandle 是一个运行中 worker loop 的句柄。retire 置位后,worker 在跑完
+// 当前意图、回到循环顶时优雅退出(正在执行的意图绝不会被砍)。
+type workerHandle struct {
+	name   string
+	retire atomic.Bool
+}
+
+// workerPool 是任务的伸缩 worker 池。seq 单调递增仅用于命名(work#N);
+// workers 只收存活的句柄,worker 退出时自行从中移除。
+type workerPool struct {
+	mu      sync.Mutex
+	desired int
+	seq     int
+	workers []*workerHandle
+}
+
+// registerPool 在 Run 的 started 检查之后登记任务的目标 worker 数(旧池若
+// 残留则覆盖)。紧随其后用 spawnInitialWorkers 起首批 worker。
+func (e *Engine) registerPool(taskID string, workers int) {
+	e.runtimeMu.Lock()
+	e.pools[taskID] = &workerPool{desired: workers}
+	e.runtimeMu.Unlock()
+}
+
+// spawnWorkersLocked 起n 个新 worker goroutine。调用方需持有 pool.mu。
+// wg.Add 与 runtime 存在性、ctx 未取消的检查同在 runtimeMu 临界区内,确保
+// 不会与 StopTask 的 wg.Wait 竞争(Add 必须发生在 Wait 之前)。
+func (e *Engine) spawnWorkersLocked(t *Task, pool *workerPool, n int) {
+	for i := 0; i < n; i++ {
+		e.runtimeMu.Lock()
+		rt := e.runtimes[t.ID]
+		if rt == nil || rt.ctx.Err() != nil {
+			e.runtimeMu.Unlock()
+			return
+		}
+		rt.wg.Add(1)
+		e.runtimeMu.Unlock()
+		pool.seq++
+		h := &workerHandle{name: fmt.Sprintf("work#%d", pool.seq)}
+		pool.workers = append(pool.workers, h)
+		runTaskRoutine(rt, func(loopCtx context.Context) {
+			defer e.retireWorkerFromPool(t.ID, h)
+			e.workerLoop(loopCtx, t, h)
+		})
+	}
+}
+
+// retireWorkerFromPool 把已退出的 worker 句柄从池中移除(池已注销则 no-op)。
+func (e *Engine) retireWorkerFromPool(taskID string, h *workerHandle) {
+	e.runtimeMu.Lock()
+	pool := e.pools[taskID]
+	e.runtimeMu.Unlock()
+	if pool == nil {
+		return
+	}
+	pool.mu.Lock()
+	for i, x := range pool.workers {
+		if x == h {
+			pool.workers = append(pool.workers[:i], pool.workers[i+1:]...)
+			break
+		}
+	}
+	pool.mu.Unlock()
+}
+
+// rescalePool 把一个任务的 worker 池调到 n:活句柄不足则补,富余则给最靠后
+// 的超额句柄打 retire 标志(它们跑完当前意图即退出)。
+func (e *Engine) rescalePool(t *Task, n int) {
+	e.runtimeMu.Lock()
+	pool := e.pools[t.ID]
+	e.runtimeMu.Unlock()
+	if pool == nil {
+		return
+	}
+	if e.IsDeleting(t.ID) || isTerminalStatus(e.m.TaskStatus(t.ID)) {
+		return
+	}
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	pool.desired = n
+	live := 0
+	for _, h := range pool.workers {
+		if !h.retire.Load() {
+			live++
+		}
+	}
+	switch {
+	case live < n:
+		e.spawnWorkersLocked(t, pool, n-live)
+	case live > n:
+		surplus := live - n
+		for _, h := range pool.workers {
+			if surplus == 0 {
+				break
+			}
+			if !h.retire.Load() {
+				h.retire.Store(true)
+				surplus--
+				log.Printf("[pool] task %s %s 收到缩减信号(跑完当前意图后退出)", t.ID, h.name)
+			}
+		}
+	}
+}
+
+// ApplyWorkers 把新的并发工作 agent 数立即作用到所有运行中的任务。在
+// SetWorkers 落库之后由设置 API 调用;对新任务无需处理(Run 每次都读当前值)。
+func (e *Engine) ApplyWorkers(n int) {
+	e.runtimeMu.Lock()
+	ids := make([]string, 0, len(e.pools))
+	for id := range e.pools {
+		ids = append(ids, id)
+	}
+	e.runtimeMu.Unlock()
+	for _, id := range ids {
+		if t, ok := e.m.Task(id); ok {
+			e.rescalePool(t, n)
+		}
+	}
+}
+
 // StopTask permanently stops every long-lived goroutine and removes all Engine
 // state for a successfully deleted task. The delete barrier remains installed
 // until cleanup finishes, so no new task operation can race the teardown.
@@ -272,6 +396,7 @@ func (e *Engine) StopTask(taskID string) {
 	if e.runtimes[taskID] == rt {
 		delete(e.runtimes, taskID)
 	}
+	delete(e.pools, taskID)
 	e.runtimeMu.Unlock()
 
 	e.started.Delete(taskID)
@@ -390,7 +515,8 @@ func NewEngine(m *Manager) *Engine {
 	return &Engine{m: m, debounce: 800 * time.Millisecond, bc: NewBroadcaster(),
 		execCancel: map[string]context.CancelCauseFunc{}, execCtx: map[string]context.Context{},
 		work: map[int64]*workExecution{}, steerBox: map[int64][]string{},
-		runtimes: map[string]*taskRuntime{}}
+		runtimes: map[string]*taskRuntime{},
+		pools:    map[string]*workerPool{}}
 }
 
 // registerWork records the cancel for the work currently running intentID.
@@ -757,14 +883,12 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 		t.Notify() // already running — just nudge a planning round
 		return
 	}
-	rt := e.registerTaskRoutines(ctx, t.ID, 1+workers)
+	rt := e.registerTaskRoutines(ctx, t.ID, 1) // planner;worker 由池按需 Add
 	e.deleteMu.RUnlock()
 	e.touch(t.ID)
+	e.registerPool(t.ID, workers)
 	runTaskRoutine(rt, func(loopCtx context.Context) { e.plannerLoop(loopCtx, t) })
-	for i := 0; i < workers; i++ {
-		name := fmt.Sprintf("work#%d", i+1)
-		runTaskRoutine(rt, func(loopCtx context.Context) { e.workerLoop(loopCtx, t, name) })
-	}
+	e.rescalePool(t, workers) // 首批 worker(池刚登记,live=0 → 全量补齐)
 	e.startDeadlineCoordinator(ctx, t) // 任务级超时定时器(仅 timeout>0;去重)
 	// 仅在「完全没有活动意图(open+running)」时才 kick 首轮规划。带种子意图的任务:种子已
 	// 是 open,或已被上面刚起的 worker 抢先 claim 成 running——两种都算「有活干」,一律跳过
@@ -913,12 +1037,18 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 	}
 }
 
-func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {
+func (e *Engine) workerLoop(ctx context.Context, t *Task, h *workerHandle) {
+	name := h.name
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		if h.retire.Load() {
+			// workers 设置被调小:不再领取新意图,当前这轮跑完就从池中退出。
+			log.Printf("[worker %s] task %s 并发缩减,优雅退出", name, t.ID)
+			return
 		}
 		_, worker := e.snapshotFor(t)
 		if worker == nil {
