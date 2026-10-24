@@ -220,7 +220,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
           {result.error ? (
             <p className="p-3 text-sm text-destructive">{result.error}</p>
           ) : result.cols && result.cols.length > 0 ? (
-            <Table>
+            <Table className="[&_th]:h-12 [&_td]:h-12">
               <TableHeader>
                 <TableRow>
                   {result.cols.map((c) => (

@@ -193,7 +193,7 @@ export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
             </Empty>
           ) : (
             <div className="overflow-x-auto px-4 lg:px-6">
-              <Table>
+              <Table className="[&_th]:h-12 [&_td]:h-12">
                 <TableHeader>
                   <TableRow>
                     <TableHead>名称</TableHead>

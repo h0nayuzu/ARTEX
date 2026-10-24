@@ -479,7 +479,7 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
           </Button>
         </div>
         <div className="overflow-x-auto px-4 lg:px-6">
-          <Table className="[&_td]:py-3">
+          <Table className="[&_th]:h-12 [&_td]:h-12">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-14">ID</TableHead>
@@ -599,7 +599,7 @@ function VshellListeners({ server }: { server: VshellServer }) {
           </Button>
         </div>
         <div className="overflow-x-auto px-4 lg:px-6">
-          <Table>
+          <Table className="[&_th]:h-12 [&_td]:h-12">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-16">ID</TableHead>

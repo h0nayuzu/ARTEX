@@ -167,7 +167,7 @@ function WebshellInfo({ conn }: { conn: WebshellConn }) {
             </Button>
           </div>
           <div className="max-h-96 overflow-auto rounded-md border">
-            <Table>
+            <Table className="[&_th]:h-12 [&_td]:h-12">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-36">时间</TableHead>

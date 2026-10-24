@@ -135,7 +135,7 @@ export function WebshellGeneratorDialog({ open, onOpenChange }: { open: boolean;
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">历史产物</p>
             <div className="max-h-72 overflow-auto rounded-md border">
-              <Table>
+              <Table className="[&_th]:h-12 [&_td]:h-12">
                 <TableHeader>
                   <TableRow>
                     <TableHead>名称</TableHead>
@@ -159,13 +159,13 @@ export function WebshellGeneratorDialog({ open, onOpenChange }: { open: boolean;
                       <TableCell className="text-sm">{g.kind}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="outline" className="h-7" onClick={() => window.open(`/api/shell/webshell/generations/${g.id}/download`, "_blank")}>
+                          <Button size="sm" variant="outline" className="h-8" onClick={() => window.open(`/api/shell/webshell/generations/${g.id}/download`, "_blank")}>
                             <DownloadIcon className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-destructive"
+                            className="h-8 text-destructive"
                             onClick={() => void api.webshellGenerationDelete(g.id).then(() => loadHistory())}
                           >
                             <Trash2Icon className="h-3.5 w-3.5" />

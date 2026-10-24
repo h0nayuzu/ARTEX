@@ -114,7 +114,7 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
           </Button>
         </div>
       </div>
-      <Table>
+      <Table className="[&_th]:h-12 [&_td]:h-12">
         <TableHeader>
           <TableRow>
             <TableHead className="w-16">ID</TableHead>
@@ -163,18 +163,18 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
               <TableCell>
                 <div className="flex gap-1">
                   {running(t) ? (
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => void act("stop", tid(t))}>
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => void act("stop", tid(t))}>
                       停止
                     </Button>
                   ) : (
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => void act("start", tid(t))}>
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => void act("start", tid(t))}>
                       启动
                     </Button>
                   )}
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-destructive"
+                    className="h-8 text-destructive"
                     onClick={() => confirm("删除该隧道?") && void act("del", tid(t))}
                   >
                     删除

@@ -104,7 +104,7 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
           <span className="text-muted-foreground ml-auto mr-4 text-sm lg:mr-6">{items.length} 个监听</span>
         </div>
         <div className="overflow-x-auto px-4 lg:px-6">
-          <Table>
+          <Table className="[&_th]:h-12 [&_td]:h-12">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-14">ID</TableHead>

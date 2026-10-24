@@ -170,7 +170,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
         </span>
       </div>
 
-      <Table>
+      <Table className="[&_th]:h-12 [&_td]:h-12">
         <TableHeader>
           <TableRow>
             <TableHead>名称</TableHead>
@@ -206,16 +206,16 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
                 <div className="flex flex-wrap gap-1">
                   {!e.is_dir && (
                     <>
-                      <Button size="sm" variant="outline" className="h-7" onClick={() => void openFile(e)}>
+                      <Button size="sm" variant="outline" className="h-8" onClick={() => void openFile(e)}>
                         查看/编辑
                       </Button>
-                      <Button size="sm" variant="outline" className="h-7" onClick={() => download(e.name)}>
+                      <Button size="sm" variant="outline" className="h-8" onClick={() => download(e.name)}>
                         <DownloadIcon className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-7"
+                        className="h-8"
                         title="MD5 校验"
                         onClick={async () => {
                           const r = await action("hash", fullPath(e.name));
@@ -230,7 +230,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7"
+                      className="h-8"
                       title="重命名/移动"
                       disabled={busy}
                       onClick={() => {
@@ -245,7 +245,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7"
+                      className="h-8"
                       title="改权限"
                       disabled={busy}
                       onClick={() => {
@@ -259,7 +259,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-destructive"
+                    className="h-8 text-destructive"
                     disabled={busy}
                     onClick={() => confirm(`删除 ${e.name}?${e.is_dir ? "(目录将递归删除)" : ""}`) && void action(e.is_dir ? "delete-dir" : "delete", fullPath(e.name))}
                   >

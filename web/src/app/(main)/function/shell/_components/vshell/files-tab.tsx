@@ -252,7 +252,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table className="[&_td]:py-2.5">
+          <Table className="[&_th]:h-12 [&_td]:h-12">
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -301,10 +301,10 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                       <div className="flex gap-0.5">
                         {!isDir && (
                           <>
-                            <Button size="icon" variant="ghost" className="size-7" title="查看/编辑" onClick={() => void openFile(name)}>
+                            <Button size="icon" variant="ghost" className="size-8" title="查看/编辑" onClick={() => void openFile(name)}>
                               <PencilIcon className="size-3.5" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-7" title="下载" onClick={() => download(name)}>
+                            <Button size="icon" variant="ghost" className="size-8" title="下载" onClick={() => download(name)}>
                               <DownloadIcon className="size-3.5" />
                             </Button>
                           </>
@@ -312,7 +312,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="text-destructive size-7"
+                          className="text-destructive size-8"
                           title="删除"
                           disabled={busy}
                           onClick={() => confirm(`删除 ${name}?`) && void action("rm", name)}
