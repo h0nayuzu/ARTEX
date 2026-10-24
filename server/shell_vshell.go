@@ -619,12 +619,13 @@ func (s *Server) listVshellServers(w http.ResponseWriter, r *http.Request) {
 }
 
 type vshellMutationRequest struct {
-	Name      *string `json:"name"`
-	BaseURL   *string `json:"base_url"`
-	Username  *string `json:"username"`
-	Password  *string `json:"password"`
-	TimeoutMs *int    `json:"timeout_ms"`
-	Remark    *string `json:"remark"`
+	Name          *string `json:"name"`
+	BaseURL       *string `json:"base_url"`
+	Username      *string `json:"username"`
+	Password      *string `json:"password"`
+	TimeoutMs     *int    `json:"timeout_ms"`
+	Remark        *string `json:"remark"`
+	DirectBaseURL *string `json:"direct_base_url"`
 }
 
 func (s *Server) createVshellServer(w http.ResponseWriter, r *http.Request) {
@@ -674,6 +675,9 @@ func applyVshellMutation(v *db.VshellServer, req *vshellMutationRequest) {
 	}
 	if req.Remark != nil {
 		v.Remark = *req.Remark
+	}
+	if req.DirectBaseURL != nil {
+		v.DirectBaseURL = strings.TrimRight(strings.TrimSpace(*req.DirectBaseURL), "/")
 	}
 }
 
@@ -1432,4 +1436,28 @@ func (s *Server) vshellTerminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	<-done
+}
+
+
+// vshellToken 把站点的 vshell JWT 披露给已登录的浏览器(直连模式用)。
+// 每次披露记台账;凭据本身仍不出后端——nginx 注入 Basic,浏览器只带 Token 头。
+func (s *Server) vshellToken(w http.ResponseWriter, r *http.Request) {
+	server, st, ok := s.getVshellServerByID(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	token, err := vshellClientFor(server).ensureToken(ctx)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	st.LogShellOp("vshell", server.ID, "token.disclose", "direct mode")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":           token,
+		"direct_base_url": server.DirectBaseURL,
+		"base_url":        server.BaseURL,
+		"basic_auth":      true,
+	})
 }

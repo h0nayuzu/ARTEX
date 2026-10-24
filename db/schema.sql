@@ -1475,3 +1475,8 @@ CREATE TABLE IF NOT EXISTS shell_op_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_shell_op_log_conn ON shell_op_log(conn_id, id DESC);
+
+-- VShell 直连接入点(可选):nginx 将 vshell 反代到与 ARTEX 同源的前缀下并注入
+-- Basic 网关凭据,浏览器直连该前缀以绕开 ARTEX 中转(降延迟/免双跳大文件);
+-- 空 = 全部走 ARTEX 代理。
+ALTER TABLE shell_vshell_servers ADD COLUMN IF NOT EXISTS direct_base_url TEXT NOT NULL DEFAULT '';

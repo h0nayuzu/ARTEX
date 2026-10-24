@@ -273,6 +273,7 @@ export function VshellServerDialog({
   const [password, setPassword] = React.useState("");
   const [timeoutMs, setTimeoutMs] = React.useState(30000);
   const [remark, setRemark] = React.useState("");
+  const [directBaseURL, setDirectBaseURL] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -283,6 +284,7 @@ export function VshellServerDialog({
       setPassword("");
       setTimeoutMs(server?.timeout_ms ?? 30000);
       setRemark(server?.remark ?? "");
+      setDirectBaseURL(server?.direct_base_url ?? "");
     }
   }, [open, server]);
 
@@ -293,7 +295,7 @@ export function VshellServerDialog({
     }
     setBusy(true);
     try {
-      const body: Record<string, unknown> = { name, base_url: baseURL.trim(), username, timeout_ms: timeoutMs, remark };
+      const body: Record<string, unknown> = { name, base_url: baseURL.trim(), username, timeout_ms: timeoutMs, remark, direct_base_url: directBaseURL.trim() };
       if (password) body.password = password;
       if (server) await api.vshellUpdate(server.id, body);
       else await api.vshellCreate(body as { base_url: string });
@@ -339,6 +341,16 @@ export function VshellServerDialog({
           <Field>
             <FieldLabel>备注</FieldLabel>
             <Input value={remark} onChange={(e) => setRemark(e.target.value)} />
+          </Field>
+          <Field>
+            <FieldLabel>
+              直连接入点(可选)
+              <span className="text-muted-foreground ml-1 font-normal">浏览器直连该前缀,绕开 ARTEX 中转——大文件/延迟场景用</span>
+            </FieldLabel>
+            <Input value={directBaseURL} className="font-mono text-xs" placeholder="/vshell 或 https://你的域名/vshell" onChange={(e) => setDirectBaseURL(e.target.value)} />
+            <p className="text-muted-foreground text-xs">
+              需 nginx 反代该前缀到 vshell 并注入其 Basic 网关凭据;失败自动回落 ARTEX 代理。
+            </p>
           </Field>
         </FieldGroup>
         <DialogFooter>

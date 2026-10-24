@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { HostOption } from "./plugins-page";
+import { vshellApi, vshellFileDownload } from "@/lib/vshell-client";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 interface VFileItem {
@@ -151,8 +152,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   };
 
   const download = (name: string) => {
-    const q = new URLSearchParams({ host: hostId, path: dir, name });
-    window.open(`/api/shell/vshell/${server.id}/download?${q}`, "_blank");
+    void vshellFileDownload(server.id, hostId, dir, name);
   };
 
   const parent = () => {
@@ -432,14 +432,7 @@ function FileTree({
     setRootsLoaded(false);
     (async () => {
       try {
-        const r = await fetch(`/api/shell/vshell/${server.id}/api/file/getdisk`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
-          body: JSON.stringify({ endpoint: "file/getdisk", body: { id: Number(hostId) } }),
-        });
-        const payload = (await r.json()) as { result?: unknown; error?: string };
-        if (!r.ok || !payload.result) throw new Error(payload.error || `HTTP ${r.status}`);
-        const res = payload.result as unknown;
+        const res = (await vshellApi(server.id, "file/getdisk", { id: Number(hostId) })) as unknown;
         // 实测返回 [{name:"/",isDir:true,...}]——对象取 name,字符串直用
         const raw: unknown[] = Array.isArray(res)
           ? res
@@ -552,13 +545,7 @@ function fmtSize(n: number) {
 // file/modifytime 走通用代理(参数名按 vshell 端点惯例,失败透传错误)。
 async function genericModifyTime(serverId: string, hostId: string, path: string, target: string, epoch: number) {
   try {
-    const r = await fetch(`/api/shell/vshell/${serverId}/api/file/modifytime`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
-      body: JSON.stringify({ endpoint: "file/modifytime", body: { id: Number(hostId), path, target, time: epoch, timestamp: epoch } }),
-    });
-    const payload = (await r.json().catch(() => ({}))) as { error?: string };
-    if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
+    await vshellApi(serverId, "file/modifytime", { id: Number(hostId), path, target, time: epoch });
     toast.success("时间已修改");
   } catch (e) {
     toast.error(e instanceof Error ? e.message : "修改时间失败");

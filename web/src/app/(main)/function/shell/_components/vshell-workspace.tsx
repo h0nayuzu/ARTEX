@@ -30,7 +30,8 @@ import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 import { VshellFilesTab } from "./vshell/files-tab";
-import { VshellGeneratorPage, callApi } from "./vshell/generator-page";
+import { VshellGeneratorPage } from "./vshell/generator-page";
+import { vshellApi } from "@/lib/vshell-client";
 import { VshellListenersPage } from "./vshell/listeners-page";
 import { VshellPluginsPage, VshellSettingsPage } from "./vshell/plugins-page";
 import { VshellTerminalTab } from "./vshell/terminal-tab";
@@ -163,6 +164,7 @@ export function VshellWorkspace({
         ) : (
           <Badge variant="outline">未检查</Badge>
         )}
+        {server.direct_base_url && <Badge variant="outline" title={`浏览器直连 ${server.direct_base_url},不经 ARTEX 中转`}>直连</Badge>}
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" disabled={checking} onClick={() => void check()}>
             <RefreshCwIcon className={`size-4 ${checking ? "animate-spin" : ""}`} /> 检查连接
@@ -662,7 +664,7 @@ function ForwardConnectDialog({ server, onClose, onDone }: { server: VshellServe
         salt: form.salt,
       };
       if (form.proxy) body.proxy = form.proxy;
-      await callApi(server.id, "client/add", body);
+      await vshellApi(server.id, "client/add", body);
       toast.success("正向连接已下发");
       onDone();
       onClose();

@@ -14,22 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
+import { vshellApi, vshellGenerateDownload } from "@/lib/vshell-client";
 import type { VshellServer } from "@/lib/types";
 
 import { VshellListenersPage } from "./listeners-page";
 
 const ARCHES = ["darwin_amd64", "darwin_arm64", "linux_amd64", "linux_i386", "linux_arm64", "linux_arm", "windows_amd64", "windows_i386"];
 
-async function callApi(serverId: string, endpoint: string, body?: unknown) {
-  const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
-    body: JSON.stringify({ endpoint, body: body ?? {} }),
-  });
-  const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
-  if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
-  return payload.result;
-}
 
 interface ListenerBrief {
   Id: number;
@@ -44,7 +35,7 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
   const [tab, setTab] = React.useState("stage");
 
   React.useEffect(() => {
-    callApi(server.id, "listener/list", { page: 1, pageSize: 9999, status: true })
+    vshellApi(server.id, "listener/list", { page: 1, pageSize: 9999, status: true })
       .then((res) => setListeners(((res as { items?: ListenerBrief[] })?.items ?? []) as ListenerBrief[]))
       .catch(() => {});
   }, [server.id]);
@@ -135,8 +126,7 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 }
 
 function download(serverId: string, kind: string, params: Record<string, string>) {
-  const q = new URLSearchParams(params).toString();
-  window.open(`/api/shell/vshell/${serverId}/download/${kind}?${q}`, "_blank");
+  vshellGenerateDownload(serverId, kind, params);
 }
 
 function StageForm({
@@ -372,4 +362,4 @@ function ListenForm({ server, kind, ebpf }: { server: VshellServer; kind: string
 }
 
 // 供外部确认 re-export(监听页在生成页下方提供快捷入口)
-export { VshellListenersPage, callApi };
+export { VshellListenersPage };

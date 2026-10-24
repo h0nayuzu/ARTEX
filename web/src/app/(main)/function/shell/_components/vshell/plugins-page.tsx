@@ -12,6 +12,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import { vshellApi, vshellUpload } from "@/lib/vshell-client";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 export function VshellPluginsPage({ server }: { server: VshellServer }) {
@@ -29,7 +30,7 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
     try {
       const [hs, ps] = await Promise.all([
         api.vshellHosts(server.id, false),
-        callApi(server.id, "runner/list") as Promise<{ id: number; name: string }[]>,
+        vshellApi(server.id, "runner/list") as Promise<{ id: number; name: string }[]>,
       ]);
       setHosts(hs);
       setPlugins(Array.isArray(ps) ? ps : []);
@@ -51,7 +52,7 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
     setOutput("");
     try {
       // 原版表单契约:id=客户端 Id,pluginName=插件文件名,procArg=参数
-      const res = (await callApi(server.id, "runner/runplugin", { id: Number(hostId), pluginName, procArg: args })) as unknown;
+      const res = (await vshellApi(server.id, "runner/runplugin", { id: Number(hostId), pluginName, procArg: args })) as unknown;
       setOutput(typeof res === "string" ? res : JSON.stringify(res, null, 2));
       toast.success("插件执行完成");
     } catch (e) {
@@ -66,14 +67,7 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const token = localStorage.getItem("artex_token") ?? "";
-      const r = await fetch(`/api/shell/vshell/${server.id}/runner/upload`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const payload = (await r.json().catch(() => ({}))) as { error?: string };
-      if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
+      await vshellUpload(server.id, "runner", fd);
       toast.success(`插件 ${file.name} 已上传(vshell plugins 目录)`);
       await load();
     } catch (e) {
@@ -166,7 +160,7 @@ export function VshellSettingsPage({ server }: { server: VshellServer }) {
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    callApi(server.id, "setting/get")
+    vshellApi(server.id, "setting/get")
       .then((res) => {
         const s = (res ?? {}) as { dingding_access_token?: string; dingding_key_word?: string; wx_key?: string };
         setDingToken(s.dingding_access_token ?? "");
@@ -179,7 +173,7 @@ export function VshellSettingsPage({ server }: { server: VshellServer }) {
   const save = async () => {
     setBusy(true);
     try {
-      await callApi(server.id, "setting/edit", {
+      await vshellApi(server.id, "setting/edit", {
         dingding_access_token: dingToken,
         dingding_key_word: dingKeyword,
         wx_key: wxKey,
@@ -219,16 +213,6 @@ export function VshellSettingsPage({ server }: { server: VshellServer }) {
   );
 }
 
-async function callApi(serverId: string, endpoint: string, body?: unknown) {
-  const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
-    body: JSON.stringify({ endpoint, body: body ?? {} }),
-  });
-  const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
-  if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
-  return payload.result;
-}
 
 
 // 主机下拉选项:在线点 + 主机名 + 内网 IP(终端/文件/隧道/插件共用)。

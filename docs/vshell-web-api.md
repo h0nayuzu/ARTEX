@@ -158,3 +158,45 @@ arch 全集:`darwin_amd64 darwin_arm64 linux_amd64 linux_i386 linux_arm64 linux_
 - 前端对 `/client/list` 有 10s 轮询(在线页);ARTEX 用「10s 自动刷新」开关对应。
 - 上线命令里的 `/slt` `/swt` 是 vshell 内置分发路径,不要拼错。
 - Basic 凭据变更 → ARTEX 侧 sig 变化自动重建客户端(token 作废)。
+
+## 9. 直连模式(公网穿透场景,ARTEX p28+)
+
+痛点:ARTEX 端口穿透到公网(nginx Basic 前置)时,vshell 流量走 浏览器→公网→nginx→ARTEX→vshell
+双跳,延迟高、大文件双倍带宽。
+
+方案:站点登记**直连接入点 direct_base_url**(可选)——nginx 把 vshell 反代到与 ARTEX 同源的
+前缀下(如 `/vshell/`),并在该 location **注入 vshell 的 Basic 网关凭据**。浏览器直连该前缀:
+- XHR/WS 只带 vshell 的 `Token` 头(JWT 由 ARTEX `GET /api/shell/vshell/{id}/token` 一次性
+  披露,内存缓存;每次披露记 op_log `token.disclose`);
+- 直连失败(网络/401/CORS)自动回落 ARTEX 代理,该站点 60s 冷却;终端 WS 直连失败降级重连一次;
+- 未配置 direct_base_url 的站点行为不变(全代理)。
+
+nginx 配置样例(与 ARTEX 同 server 块;Basic 注入值 = base64(用户:密码)):
+
+    # ARTEX(整站 Basic 由你原有的 server 级配置承担)
+    location / { proxy_pass http://127.0.0.1:8787; ... }
+
+    # vshell 直连前缀:剥前缀 + 注入 vshell 网关 Basic + WebSocket 升级头
+    location /vshell/ {
+        proxy_pass http://<vshell监听地址与端口>/;
+        proxy_set_header Authorization "Basic <base64(vshell用户:密码)>";
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
+
+**已部署(2026-10-24):自管公网闸门 nginx 站内已加 `/vshell/` location(同闸门鉴权
++ 注入 vshell 网关 Basic + WS 升级头,proxy_pass 到 vshell 真实地址,已 curl 端到端
+验证:闸门 Cookie + Token → code:0 真实数据)。真实主机/端口/凭据等部署参数只存在
+服务器本机的 nginx 配置里,严禁写入本仓库(公开 repo)。**
+站内 direct_base_url 已设为 `/vshell`(相对
+前缀:公网闸门来源=直连生效;内网来源探测 404 自动回落代理,本地代理反而更快,徽标如实显示)。
+
+注意:
+- 注入的 Authorization 头会覆盖浏览器带来的整站 Basic——这正是目的(vshell 网关用它,
+  ARTEX 的 site Basic 在别的 location 处理);
+- `web_basic_auth=false` 的 vshell 站点可不注入,直连仅凭 Token 头;
+- 客户端生成下载(/download/*)是导航类请求,无法带 Token 头,始终走 ARTEX 代理
+  (ARTEX 侧已流式);文件下载在直连模式下走 fetch Blob(三步链在前端跑),失败回落代理;
+- 直连把 C2 的 12h JWT 暴露给已登录浏览器——信任边界=ARTEX 登录用户,介意就别配直连。

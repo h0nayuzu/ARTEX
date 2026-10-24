@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { vshellApi } from "@/lib/vshell-client";
 import type { VshellServer } from "@/lib/types";
 
 export interface VshellListener {
@@ -44,16 +45,6 @@ const MODES = [
   { value: "oss", label: "OSS" },
 ];
 
-async function callApi(serverId: string, endpoint: string, body?: unknown) {
-  const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
-    body: JSON.stringify({ endpoint, body: body ?? {} }),
-  });
-  const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
-  if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
-  return payload.result;
-}
 
 export function VshellListenersPage({ server }: { server: VshellServer }) {
   const [items, setItems] = React.useState<VshellListener[]>([]);
@@ -65,7 +56,7 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const res = (await callApi(server.id, "listener/list", { page: 1, pageSize: 9999 })) as { items?: VshellListener[] } | null;
+      const res = (await vshellApi(server.id, "listener/list", { page: 1, pageSize: 9999 })) as { items?: VshellListener[] } | null;
       setItems(res?.items ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "监听清单加载失败");
@@ -81,7 +72,7 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
   const act = async (listener: VshellListener, op: "start" | "stop" | "del") => {
     setBusyId(listener.Id);
     try {
-      await callApi(server.id, `listener/${op}`, { id: listener.Id });
+      await vshellApi(server.id, `listener/${op}`, { id: listener.Id });
       toast.success(op === "del" ? "已删除" : op === "start" ? "已启用" : "已停用");
       await load();
     } catch (e) {
@@ -265,8 +256,8 @@ function ListenerDialog({
     }
     setBusy(true);
     try {
-      if (listener) await callApi(server.id, "listener/edit", { Id: listener.Id, ...form });
-      else await callApi(server.id, "listener/add", form);
+      if (listener) await vshellApi(server.id, "listener/edit", { Id: listener.Id, ...form });
+      else await vshellApi(server.id, "listener/add", form);
       toast.success(listener ? "监听已更新" : "监听已创建");
       await onSaved();
     } catch (e) {

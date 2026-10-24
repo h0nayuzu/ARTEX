@@ -68,11 +68,12 @@ type VshellServer struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
 	BaseURL     string       `json:"base_url"`
-	Username    string       `json:"username"`
-	Password    string       `json:"-"`
-	TimeoutMs   int          `json:"timeout_ms"`
-	Remark      string       `json:"remark"`
-	LastStatus  string       `json:"last_status"`
+	Username      string       `json:"username"`
+	Password      string       `json:"-"`
+	TimeoutMs     int          `json:"timeout_ms"`
+	Remark        string       `json:"remark"`
+	DirectBaseURL string       `json:"direct_base_url"`
+	LastStatus    string       `json:"last_status"`
 	LastCheckAt sql.NullTime `json:"-"`
 	LastError   string       `json:"last_error"`
 	CreatedAt   time.Time    `json:"created_at"`
@@ -370,12 +371,12 @@ func (s *ShellStore) DeleteGeneration(id string) error {
 	return err
 }
 
-const vshellCols = `id, name, base_url, username, password, timeout_ms, remark, last_status, last_check_at, last_error, created_at, updated_at`
+const vshellCols = `id, name, base_url, username, password, timeout_ms, remark, direct_base_url, last_status, last_check_at, last_error, created_at, updated_at`
 
 func scanVshell(row interface{ Scan(...any) error }) (*VshellServer, error) {
 	var v VshellServer
 	if err := row.Scan(&v.ID, &v.Name, &v.BaseURL, &v.Username, &v.Password, &v.TimeoutMs, &v.Remark,
-		&v.LastStatus, &v.LastCheckAt, &v.LastError, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		&v.DirectBaseURL, &v.LastStatus, &v.LastCheckAt, &v.LastError, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &v, nil
@@ -429,15 +430,15 @@ func (s *ShellStore) SaveVshellServer(v *VshellServer) (*VshellServer, error) {
 			v.TimeoutMs = existing.TimeoutMs
 		}
 		_, err = s.db.DB.Exec(`UPDATE shell_vshell_servers SET name=$2, base_url=$3, username=$4, password=$5,
-			timeout_ms=$6, remark=$7, updated_at=now() WHERE id=$1`,
-			v.ID, v.Name, v.BaseURL, v.Username, v.Password, clampTimeout(v.TimeoutMs, 5000, 300000, 30000), v.Remark)
+			timeout_ms=$6, remark=$7, direct_base_url=$8, updated_at=now() WHERE id=$1`,
+			v.ID, v.Name, v.BaseURL, v.Username, v.Password, clampTimeout(v.TimeoutMs, 5000, 300000, 30000), v.Remark, v.DirectBaseURL)
 	} else {
 		if v.ID == "" {
 			v.ID = "vs_" + randomHex(6)
 		}
-		_, err = s.db.DB.Exec(`INSERT INTO shell_vshell_servers (id, name, base_url, username, password, timeout_ms, remark, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,now(),now())`,
-			v.ID, v.Name, v.BaseURL, v.Username, v.Password, clampTimeout(v.TimeoutMs, 5000, 300000, 30000), v.Remark)
+		_, err = s.db.DB.Exec(`INSERT INTO shell_vshell_servers (id, name, base_url, username, password, timeout_ms, remark, direct_base_url, created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),now())`,
+			v.ID, v.Name, v.BaseURL, v.Username, v.Password, clampTimeout(v.TimeoutMs, 5000, 300000, 30000), v.Remark, v.DirectBaseURL)
 	}
 	if err != nil {
 		return nil, err

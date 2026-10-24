@@ -1733,6 +1733,7 @@ export interface VshellServer {
   password_tail: string;
   timeout_ms: number;
   remark: string;
+  direct_base_url?: string;
   last_status: string;
   last_check_at?: string;
   last_error: string;

@@ -4,6 +4,7 @@
 // are passed through and formatted at the call site.
 
 import type { ChatMention } from "@/lib/chat-mentions";
+import { vshellApi as vsApi, vshellUpload as vsUploadFn } from "@/lib/vshell-client";
 import { MOCK } from "@/lib/mock/enabled";
 import { mockHandle } from "@/lib/mock/handler";
 import type {
@@ -1410,30 +1411,81 @@ export const api = {
   vshellDelete: (id: string) => del<{ ok: boolean }>(`/shell/vshell/${id}`),
   vshellCheck: (id: string) =>
     post<{ ok: boolean; info: Record<string, unknown> }>(`/shell/vshell/${id}/check`),
-  vshellHosts: (id: string, online = true) =>
-    get<{ items: VshellHost[] }>(`/shell/vshell/${id}/hosts?online=${online ? 1 : 0}`).then((r) => arr(r.items)),
-  vshellExec: (id: string, hostId: number | string, command: string) =>
-    post<{ output: string }>(`/shell/vshell/${id}/exec`, { host_id: hostId, command }),
-  vshellRemark: (id: string, hostId: number | string, remark: string) =>
-    post<{ ok: boolean }>(`/shell/vshell/${id}/remark`, { host_id: hostId, remark }),
-  vshellFile: (id: string, body: Record<string, unknown>) =>
-    post<Record<string, unknown>>(`/shell/vshell/${id}/file`, body),
+  // vshell 业务调用走 vshell-client(直连优先/代理回落);站点 CRUD 仍走 ARTEX。
+  vshellHosts: async (id: string, online = true) => {
+    const res = await vsApi<{ items?: VshellHost[] }>(id, "client/list", { page: 1, pageSize: 9999, status: online });
+    return arr((res as { items?: VshellHost[] })?.items);
+  },
+  vshellExec: async (id: string, hostId: number | string, command: string) => {
+    const numeric = typeof hostId === "number" || /^\d+$/.test(String(hostId));
+    if (!numeric) {
+      return post<{ output: string }>(`/shell/vshell/${id}/exec`, { host_id: hostId, command });
+    }
+    const out = await vsApi<string>(id, "terminal/shell", { id: Number(hostId), command });
+    return { output: typeof out === "string" ? out : String(out ?? "") };
+  },
+  vshellRemark: async (id: string, hostId: number | string, remark: string) => {
+    if (!/^\d+$/.test(String(hostId))) {
+      return post<{ ok: boolean }>(`/shell/vshell/${id}/remark`, { host_id: hostId, remark });
+    }
+    await vsApi(id, "client/editremark", { id: Number(hostId), remark });
+    return { ok: true };
+  },
+  vshellFile: async (id: string, body: Record<string, unknown>) => {
+    const op = String(body.op ?? "");
+    const hostId = Number(body.host_id ?? 0);
+    const path = String(body.path ?? "/");
+    const target = String(body.target ?? "");
+    const map: Record<string, [string, Record<string, unknown>]> = {
+      ls: ["file/ls", { id: hostId, path }],
+      read: ["file/cat", { id: hostId, path, target }],
+      write: ["file/edit", { id: hostId, path, target, content: String(body.content ?? "") }],
+      mkdir: ["file/mkdir", { id: hostId, path, target }],
+      rm: ["file/rm", { id: hostId, path, target }],
+      touch: ["file/touch", { id: hostId, path, target }],
+      wget: ["file/wget", { id: hostId, path, target }],
+      mv: ["file/mv", { id: hostId, path, target, to: String(body.to ?? "") }],
+      modifytime: ["file/modifytime", { id: hostId, path, target, time: body.epoch }],
+    };
+    if (hostId && map[op]) {
+      const [endpoint, payload] = map[op];
+      return (await vsApi<Record<string, unknown>>(id, endpoint, payload)) as Record<string, unknown>;
+    }
+    return post<Record<string, unknown>>(`/shell/vshell/${id}/file`, body);
+  },
   vshellUpload: (id: string, hostId: number | string, path: string, file: File) => {
     const fd = new FormData();
     fd.append("host_id", String(hostId));
     fd.append("path", path);
     fd.append("file", file);
-    return http<{ ok: boolean; size: number }>(`/shell/vshell/${id}/upload`, {
-      method: "POST",
-      body: fd,
-    });
+    return vsUploadFn(id, "file", fd);
   },
-  vshellTunnels: (id: string) =>
-    get<{ items: Record<string, unknown>[] }>(`/shell/vshell/${id}/tunnels`).then((r) => arr(r.items)),
-  vshellTunnelAction: (id: string, body: Record<string, unknown>) =>
-    post<{ ok: boolean }>(`/shell/vshell/${id}/tunnel`, body),
-  vshellListeners: (id: string) =>
-    get<{ items: Record<string, unknown>[] }>(`/shell/vshell/${id}/listeners`).then((r) => arr(r.items)),
-  vshellInfo: (id: string) =>
-    get<{ info: Record<string, unknown> }>(`/shell/vshell/${id}/info`).then((r) => r.info),
+  vshellTunnels: async (id: string) => {
+    const res = await vsApi<{ items?: Record<string, unknown>[] }>(id, "tunnel/list", { page: 1, pageSize: 9999 });
+    return arr(res?.items);
+  },
+  vshellTunnelAction: async (id: string, body: Record<string, unknown>) => {
+    const op = String(body.op ?? "");
+    if (op === "add") {
+      await vsApi(id, "tunnel/add", {
+        ClientId: Number(body.host_id ?? 0),
+        Mode: String(body.mode ?? "socks5"),
+        Port: Number(body.port ?? 0),
+        Remark: String(body.remark ?? ""),
+        Username: String(body.username ?? ""),
+        Password: String(body.password ?? ""),
+        Target: String(body.target ?? ""),
+      });
+    } else {
+      await vsApi(id, `tunnel/${op}`, { id: Number(body.id ?? 0) });
+    }
+    return { ok: true };
+  },
+  vshellListeners: async (id: string) => {
+    const res = await vsApi<{ items?: Record<string, unknown>[] }>(id, "listener/list", { page: 1, pageSize: 9999 });
+    return arr(res?.items);
+  },
+  vshellInfo: async (id: string) => {
+    return (await vsApi<Record<string, unknown>>(id, "dashboard/info", {})) ?? {};
+  },
 };
