@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
+import { HostOption } from "./plugins-page";
 
 interface Tunnel {
   Id?: number;
@@ -187,9 +188,9 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
 
       {adding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setAdding(false)}>
-          <div className="w-[26rem] rounded-lg border bg-background p-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <p className="mb-3 text-sm font-medium">新增代理/隧道</p>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="w-[30rem] rounded-lg border bg-background p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-4 text-base font-semibold">新增代理/隧道</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
               <label className="col-span-2 flex flex-col gap-1">
                 挂靠主机
                 <Select value={form.hostId} onValueChange={(v) => setForm((f) => ({ ...f, hostId: v }))}>
@@ -199,7 +200,7 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
                   <SelectContent>
                     {hosts.map((h) => (
                       <SelectItem key={h.Id} value={String(h.Id)}>
-                        #{h.Id} {h.HostName || h.Addr}
+                        <HostOption host={h} />
                       </SelectItem>
                     ))}
                   </SelectContent>

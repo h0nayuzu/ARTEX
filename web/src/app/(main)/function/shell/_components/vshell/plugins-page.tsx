@@ -84,50 +84,52 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
 
   return (
     <Card>
-      <CardContent className="px-5 py-4">
-        <p className="text-muted-foreground mb-4 text-xs">
+      <CardContent className="px-6 py-5">
+        <p className="text-muted-foreground mb-5 text-sm">
           plugins 目录内的文件都视为插件,内存加载运行,支持 exe / .net / elf / dll / so / dylib(自行添加需遵循后缀规范)。
         </p>
-        <FieldGroup className="max-w-xl">
-          <Field>
-            <FieldLabel>选择客户端</FieldLabel>
-            <Select value={hostId} onValueChange={setHostId}>
-              <SelectTrigger>
-                <SelectValue placeholder="请选择" />
-              </SelectTrigger>
-              <SelectContent>
-                {hosts.map((h) => (
-                  <SelectItem key={h.Id} value={String(h.Id)}>
-                    #{h.Id} {h.HostName || h.Addr} {h.IsConnect ? "🟢" : "⚪"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel>选择插件</FieldLabel>
-            <Select value={pluginId} onValueChange={setPluginId}>
-              <SelectTrigger>
-                <SelectValue placeholder="请选择" />
-              </SelectTrigger>
-              <SelectContent>
-                {plugins.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+        <FieldGroup className="max-w-4xl gap-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field>
+              <FieldLabel>选择客户端</FieldLabel>
+              <Select value={hostId} onValueChange={setHostId}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hosts.map((h) => (
+                    <SelectItem key={h.Id} value={String(h.Id)}>
+                      <HostOption host={h} />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>选择插件</FieldLabel>
+              <Select value={pluginId} onValueChange={setPluginId}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  {plugins.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      <span className="font-mono text-sm">{p.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
           <Field>
             <FieldLabel>参数</FieldLabel>
-            <Input value={args} placeholder="请输入" onChange={(e) => setArgs(e.target.value)} />
+            <Input className="h-10 text-sm" value={args} placeholder="请输入" onChange={(e) => setArgs(e.target.value)} />
           </Field>
           <div className="flex gap-2">
-            <Button disabled={busy} onClick={() => void run()}>
+            <Button className="h-10 px-6" disabled={busy} onClick={() => void run()}>
               <PlayIcon className={`size-4 ${busy ? "animate-pulse" : ""}`} /> {busy ? "运行中…" : "运行"}
             </Button>
-            <Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
+            <Button className="h-10" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
               <UploadIcon className="size-4" /> {uploading ? "上传中…" : "上传插件"}
             </Button>
             <input
@@ -144,7 +146,7 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
           <Field>
             <FieldLabel>output</FieldLabel>
             <textarea
-              className="h-64 w-full resize-none rounded-md border bg-black p-3 font-mono text-xs text-zinc-200 outline-none"
+              className="h-96 w-full resize-none rounded-md border bg-black p-4 font-mono text-[13px] leading-6 text-zinc-200 outline-none"
               value={output}
               readOnly
               placeholder=""
@@ -191,10 +193,10 @@ export function VshellSettingsPage({ server }: { server: VshellServer }) {
 
   return (
     <Card>
-      <CardContent className="px-5 py-4">
+      <CardContent className="px-6 py-5">
         <p className="font-medium">设置</p>
-        <p className="text-muted-foreground mb-4 text-xs">无需重启修改部分设置——上线通知推送(vshell 侧)。</p>
-        <FieldGroup className="max-w-xl">
+        <p className="text-muted-foreground mb-5 text-sm">无需重启修改部分设置——上线通知推送(vshell 侧)。</p>
+        <FieldGroup className="max-w-4xl gap-5">
           <Field>
             <FieldLabel>钉钉 token</FieldLabel>
             <Input value={dingToken} onChange={(e) => setDingToken(e.target.value)} />
@@ -219,10 +221,24 @@ export function VshellSettingsPage({ server }: { server: VshellServer }) {
 async function callApi(serverId: string, endpoint: string, body?: unknown) {
   const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
     body: JSON.stringify({ endpoint, body: body ?? {} }),
   });
   const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
   if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
   return payload.result;
+}
+
+
+// 主机下拉选项:在线点 + 主机名 + 内网 IP(终端/文件/隧道/插件共用)。
+export function HostOption({ host }: { host: { Id: number; HostName: string; Addr: string; LocalIP: string; IsConnect: boolean; OsName?: string } }) {
+  return (
+    <span className="flex w-full min-w-0 items-center gap-2 py-0.5">
+      <span className={`inline-flex size-2 shrink-0 rounded-full ${host.IsConnect ? "bg-emerald-500" : "bg-zinc-400"}`} />
+      <span className="shrink-0 font-mono text-xs text-zinc-500">#{host.Id}</span>
+      <span className="shrink-0 text-sm font-medium">{host.HostName || host.Addr || "(未命名)"}</span>
+      <span className="text-muted-foreground truncate font-mono text-xs">{host.LocalIP || host.Addr}</span>
+      {host.OsName && <span className="text-muted-foreground/70 ml-auto shrink-0 font-mono text-[11px]">{host.OsName}</span>}
+    </span>
+  );
 }

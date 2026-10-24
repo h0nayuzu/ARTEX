@@ -6,6 +6,7 @@ import * as React from "react";
 
 import { ShellTerminal } from "../shell-terminal";
 import { InteractiveTerminal } from "./interactive-terminal";
+import { HostOption } from "./plugins-page";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
@@ -85,7 +86,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
             <SelectContent>
               {hosts.map((h) => (
                 <SelectItem key={h.Id} value={String(h.Id)}>
-                  #{h.Id} {h.HostName || h.Addr} {h.IsConnect ? "🟢" : "⚪"}
+                  <HostOption host={h} />
                 </SelectItem>
               ))}
             </SelectContent>
@@ -96,7 +97,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
       {mode === "interactive" ? (
         <>
           {hostId ? (
-            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 22rem)" />
+            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 16rem)" minHeight={520} />
           ) : (
             <p className="text-muted-foreground py-10 text-center text-sm">先选择一台在线主机。</p>
           )}
@@ -106,7 +107,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
           <p className="text-muted-foreground text-xs">
             非交互式(备用):同步阻塞逐条执行;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
           </p>
-          <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 26rem)" minHeight={360} />
+          <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 19rem)" minHeight={420} />
         </>
       )}
     </div>

@@ -23,7 +23,7 @@ const ARCHES = ["darwin_amd64", "darwin_arm64", "linux_amd64", "linux_i386", "li
 async function callApi(serverId: string, endpoint: string, body?: unknown) {
   const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
     body: JSON.stringify({ endpoint, body: body ?? {} }),
   });
   const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
@@ -63,9 +63,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="stage" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">Stage 反向客户端</p>
-            <p className="text-muted-foreground mb-4 text-xs">小体积客户端,反连模式上线。/download/stage?arch=&id=(监听 Id)。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">Stage 反向客户端</p>
+            <p className="text-muted-foreground mb-5 text-sm">小体积客户端,反连模式上线。/download/stage?arch=&id=(监听 Id)。</p>
             <StageForm arches={ARCHES} listeners={listeners} server={server} kind="stage" />
           </CardContent>
         </Card>
@@ -73,9 +73,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="shellcode" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">Shellcode 反向客户端</p>
-            <p className="text-muted-foreground mb-4 text-xs">Windows shellcode,反连上线;/download/shellcode?arch=&format=&id=。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">Shellcode 反向客户端</p>
+            <p className="text-muted-foreground mb-5 text-sm">Windows shellcode,反连上线;/download/shellcode?arch=&format=&id=。</p>
             <StageForm arches={ARCHES} listeners={listeners} server={server} kind="shellcode" extraParam={{ name: "format", placeholder: "_raw(可空)" }} />
           </CardContent>
         </Card>
@@ -83,9 +83,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="stageless" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">Stageless 反向客户端</p>
-            <p className="text-muted-foreground mb-4 text-xs">/download/stageless?id=&arch=&upx=&proxy=。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">Stageless 反向客户端</p>
+            <p className="text-muted-foreground mb-5 text-sm">/download/stageless?id=&arch=&upx=&proxy=。</p>
             <UpxProxyForm server={server} kind="stageless" hasId listeners={listeners} />
           </CardContent>
         </Card>
@@ -93,9 +93,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="dllstageless" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">DLL Stageless</p>
-            <p className="text-muted-foreground mb-4 text-xs">/download/dll?id=&arch=&upx=&proxy=;arch=loader 下载 loader.go。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">DLL Stageless</p>
+            <p className="text-muted-foreground mb-5 text-sm">/download/dll?id=&arch=&upx=&proxy=;arch=loader 下载 loader.go。</p>
             <UpxProxyForm server={server} kind="dll" hasId listeners={listeners} allowLoader />
           </CardContent>
         </Card>
@@ -103,9 +103,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="listen" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">正向客户端(监听)</p>
-            <p className="text-muted-foreground mb-4 text-xs">/download/listen?arch=&tp=&host=&port=&vkey=&salt=&upx=。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">正向客户端(监听)</p>
+            <p className="text-muted-foreground mb-5 text-sm">/download/listen?arch=&tp=&host=&port=&vkey=&salt=&upx=。</p>
             <ListenForm server={server} kind="listen" />
           </CardContent>
         </Card>
@@ -113,9 +113,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="dlllisten" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">DLL 正向客户端(listendll)</p>
-            <p className="text-muted-foreground mb-4 text-xs">/download/listendll?arch=&tp=&host=&port=&vkey=&salt=&upx=。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">DLL 正向客户端(listendll)</p>
+            <p className="text-muted-foreground mb-5 text-sm">/download/listendll?arch=&tp=&host=&port=&vkey=&salt=&upx=。</p>
             <ListenForm server={server} kind="listendll" />
           </CardContent>
         </Card>
@@ -123,9 +123,9 @@ export function VshellGeneratorPage({ server }: { server: VshellServer }) {
 
       <TabsContent value="ebpf" className="mt-0">
         <Card>
-          <CardContent className="px-5 py-4">
-            <p className="font-medium">eBPF 正向客户端</p>
-            <p className="text-muted-foreground mb-4 text-xs">/download/listen?...&listen=true&ebpf=true——仅 linux 内核支持。</p>
+          <CardContent className="px-6 py-5">
+            <p className="text-base font-semibold">eBPF 正向客户端</p>
+            <p className="text-muted-foreground mb-5 text-sm">/download/listen?...&listen=true&ebpf=true——仅 linux 内核支持。</p>
             <ListenForm server={server} kind="listen" ebpf />
           </CardContent>
         </Card>
@@ -156,12 +156,12 @@ function StageForm({
   const [listenerId, setListenerId] = React.useState("");
   const [extra, setExtra] = React.useState("");
   return (
-    <FieldGroup className="max-w-xl">
+    <FieldGroup className="max-w-3xl gap-5">
       <Field>
         <FieldLabel>客户端类型</FieldLabel>
-        <div className="flex flex-wrap gap-1">
+        <div className="grid w-fit grid-cols-4 gap-2">
           {arches.map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}
@@ -189,7 +189,7 @@ function StageForm({
         </Select>
       </Field>
       <Button
-        className="w-fit"
+        className="h-10 w-fit px-6"
         disabled={!listenerId}
         onClick={() => {
           const params: Record<string, string> = { arch: arch.replace(/^.*?_/, ""), id: listenerId };
@@ -222,12 +222,12 @@ function UpxProxyForm({
   const [upx, setUpx] = React.useState(false);
   const [proxy, setProxy] = React.useState("");
   return (
-    <FieldGroup className="max-w-xl">
+    <FieldGroup className="max-w-3xl gap-5">
       <Field>
         <FieldLabel>客户端类型</FieldLabel>
-        <div className="flex flex-wrap gap-1">
+        <div className="grid w-fit grid-cols-4 gap-2">
           {ARCHES.map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}
@@ -250,18 +250,21 @@ function UpxProxyForm({
           </Select>
         </Field>
       )}
-      <Field>
-        <FieldLabel>UPX 压缩</FieldLabel>
-        <div className="flex items-center gap-2">
-          <Switch checked={upx} onCheckedChange={setUpx} /> <span className="text-muted-foreground text-xs">{upx ? "开启" : "关闭"}</span>
-        </div>
-      </Field>
-      <Field>
-        <FieldLabel>使用代理(留空不使用)</FieldLabel>
-        <Input value={proxy} placeholder="socks5://1.2.3.4:1080" className="font-mono text-xs" onChange={(e) => setProxy(e.target.value)} />
-      </Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field>
+          <FieldLabel>UPX 压缩</FieldLabel>
+          <div className="flex h-9 items-center gap-2">
+            <Switch checked={upx} onCheckedChange={setUpx} /> <span className="text-muted-foreground text-sm">{upx ? "开启" : "关闭"}</span>
+          </div>
+        </Field>
+        <Field>
+          <FieldLabel>使用代理(留空不使用)</FieldLabel>
+          <Input value={proxy} placeholder="socks5://1.2.3.4:1080" className="font-mono text-xs" onChange={(e) => setProxy(e.target.value)} />
+        </Field>
+      </div>
       <div className="flex gap-2">
         <Button
+          className="h-10 px-6"
           disabled={hasId && !listenerId}
           onClick={() =>
             download(server.id, kind, {
@@ -293,12 +296,12 @@ function ListenForm({ server, kind, ebpf }: { server: VshellServer; kind: string
   const [salt, setSalt] = React.useState("qwe123qwe");
   const [upx, setUpx] = React.useState(false);
   return (
-    <FieldGroup className="max-w-xl">
+    <FieldGroup className="max-w-3xl gap-5">
       <Field>
         <FieldLabel>客户端类型</FieldLabel>
-        <div className="flex flex-wrap gap-1">
+        <div className="grid w-fit grid-cols-4 gap-2">
           {(ebpf ? ARCHES.filter((a) => a.startsWith("linux")) : ARCHES).map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}
@@ -317,33 +320,32 @@ function ListenForm({ server, kind, ebpf }: { server: VshellServer; kind: string
           </SelectContent>
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         <Field>
           <FieldLabel>IP 或域名</FieldLabel>
-          <Input value={host} className="font-mono text-xs" onChange={(e) => setHost(e.target.value)} />
+          <Input className="h-9 font-mono text-sm" value={host} onChange={(e) => setHost(e.target.value)} />
         </Field>
         <Field>
           <FieldLabel>端口</FieldLabel>
-          <Input value={port} className="font-mono text-xs" placeholder="49319" onChange={(e) => setPort(e.target.value)} />
+          <Input className="h-9 font-mono text-sm" value={port} placeholder="49319" onChange={(e) => setPort(e.target.value)} />
         </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
         <Field>
           <FieldLabel>Vkey</FieldLabel>
-          <Input value={vkey} onChange={(e) => setVkey(e.target.value)} />
+          <Input className="h-9 font-mono text-sm" value={vkey} onChange={(e) => setVkey(e.target.value)} />
         </Field>
         <Field>
           <FieldLabel>流量加密盐</FieldLabel>
-          <Input value={salt} onChange={(e) => setSalt(e.target.value)} />
+          <Input className="h-9 font-mono text-sm" value={salt} onChange={(e) => setSalt(e.target.value)} />
         </Field>
       </div>
       <Field>
         <FieldLabel>UPX 压缩</FieldLabel>
-        <div className="flex items-center gap-2">
-          <Switch checked={upx} onCheckedChange={setUpx} /> <span className="text-muted-foreground text-xs">{upx ? "开启" : "关闭"}</span>
+        <div className="flex h-9 items-center gap-2">
+          <Switch checked={upx} onCheckedChange={setUpx} /> <span className="text-muted-foreground text-sm">{upx ? "开启" : "关闭"}</span>
         </div>
       </Field>
       <Button
+        className="h-10 w-fit px-6"
         disabled={!port}
         onClick={() => {
           const params: Record<string, string> = {

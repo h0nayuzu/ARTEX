@@ -504,22 +504,22 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
               )}
               {hosts.map((h) => (
                 <TableRow key={h.Id}>
-                  <TableCell className="font-mono text-xs">#{h.Id}</TableCell>
+                  <TableCell className="font-mono text-sm">#{h.Id}</TableCell>
                   <TableCell>
                     <button
-                      className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+                      className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm"
                       title="点击修改备注"
                       onClick={() => setEditingRemark({ host: h, value: h.Remark || "" })}
                     >
-                      <PencilIcon className="size-3" /> {h.Remark || "添加"}
+                      <PencilIcon className="size-3.5" /> {h.Remark || "添加"}
                     </button>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{h.Addr || "—"}</TableCell>
-                  <TableCell className="text-xs">{h.Location || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{h.LocalIP || "—"}</TableCell>
-                  <TableCell className="text-xs">{h.UserName || "—"}</TableCell>
-                  <TableCell className="text-xs">{h.HostName || "—"}</TableCell>
-                  <TableCell className="text-xs">{h.OsName || "—"}</TableCell>
+                  <TableCell className="font-mono text-sm">{h.Addr || "—"}</TableCell>
+                  <TableCell className="text-sm">{h.Location || "—"}</TableCell>
+                  <TableCell className="font-mono text-sm">{h.LocalIP || "—"}</TableCell>
+                  <TableCell className="text-sm">{h.UserName || "—"}</TableCell>
+                  <TableCell className="text-sm">{h.HostName || "—"}</TableCell>
+                  <TableCell className="text-sm">{h.OsName || "—"}</TableCell>
                   <TableCell>{h.IsConnect ? <Badge className="bg-emerald-600">在线</Badge> : <Badge variant="secondary">离线</Badge>}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">

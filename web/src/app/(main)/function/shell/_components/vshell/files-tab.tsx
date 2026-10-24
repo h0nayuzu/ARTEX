@@ -25,6 +25,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { HostOption } from "./plugins-page";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 interface VFileItem {
@@ -433,7 +434,7 @@ function FileTree({
       try {
         const r = await fetch(`/api/shell/vshell/${server.id}/api/file/getdisk`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
           body: JSON.stringify({ endpoint: "file/getdisk", body: { id: Number(hostId) } }),
         });
         const payload = (await r.json()) as { result?: unknown; error?: string };
@@ -553,7 +554,7 @@ async function genericModifyTime(serverId: string, hostId: string, path: string,
   try {
     const r = await fetch(`/api/shell/vshell/${serverId}/api/file/modifytime`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
       body: JSON.stringify({ endpoint: "file/modifytime", body: { id: Number(hostId), path, target, time: epoch, timestamp: epoch } }),
     });
     const payload = (await r.json().catch(() => ({}))) as { error?: string };

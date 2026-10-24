@@ -3,7 +3,7 @@
 // VShell 监听管理(仿原版):新增/编辑/启停/删除 + 上线命令查看。
 // 走通用转发端点,字段名与 vshell 端点逐字对齐(Mode/ListenAddr/...)。
 import * as React from "react";
-import { PlusIcon, RefreshCwIcon, TerminalSquareIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, PowerIcon, PowerOffIcon, RefreshCwIcon, TerminalSquareIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +47,7 @@ const MODES = [
 async function callApi(serverId: string, endpoint: string, body?: unknown) {
   const r = await fetch(`/api/shell/vshell/${serverId}/api/${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("artex_token") ?? ""}` },
     body: JSON.stringify({ endpoint, body: body ?? {} }),
   });
   const payload = (await r.json().catch(() => ({}))) as { error?: string; result?: unknown };
@@ -115,7 +115,7 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
                 <TableHead className="w-28">超时心跳(次)</TableHead>
                 <TableHead className="w-24">心跳间隔(秒)</TableHead>
                 <TableHead className="w-20">状态</TableHead>
-                <TableHead className="w-64">操作</TableHead>
+                <TableHead className="w-40">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,43 +128,44 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
               )}
               {items.map((l) => (
                 <TableRow key={l.Id}>
-                  <TableCell className="font-mono text-xs">#{l.Id}</TableCell>
-                  <TableCell className="text-sm">{l.Remark || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs uppercase">{l.Mode}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.ListenAddr || "—"}</TableCell>
-                  <TableCell className="max-w-56 truncate font-mono text-xs" title={l.ConnectAddr}>
+                  <TableCell className="font-mono text-sm">#{l.Id}</TableCell>
+                  <TableCell className="text-sm font-medium">{l.Remark || "—"}</TableCell>
+                  <TableCell className="font-mono text-sm uppercase">{l.Mode}</TableCell>
+                  <TableCell className="font-mono text-sm">{l.ListenAddr || "—"}</TableCell>
+                  <TableCell className="max-w-56 truncate font-mono text-sm" title={l.ConnectAddr}>
                     {l.ConnectAddr || "—"}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{l.DisconnectTimeout}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.PingInterval}</TableCell>
+                  <TableCell className="font-mono text-sm">{l.DisconnectTimeout}</TableCell>
+                  <TableCell className="font-mono text-sm">{l.PingInterval}</TableCell>
                   <TableCell>{l.Status ? <Badge className="bg-emerald-600">在线</Badge> : <Badge variant="secondary">离线</Badge>}</TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex items-center gap-0.5">
                       {l.Status ? (
-                        <Button size="sm" variant="ghost" disabled={busyId === l.Id} onClick={() => void act(l, "stop")}>
-                          停用
+                        <Button size="icon" variant="ghost" className="size-8" title="停用" disabled={busyId === l.Id} onClick={() => void act(l, "stop")}>
+                          <PowerOffIcon className="size-4" />
                         </Button>
                       ) : (
-                        <Button size="sm" variant="ghost" disabled={busyId === l.Id} onClick={() => void act(l, "start")}>
-                          启用
+                        <Button size="icon" variant="ghost" className="size-8" title="启用" disabled={busyId === l.Id} onClick={() => void act(l, "start")}>
+                          <PowerIcon className="size-4" />
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(l)}>
-                        编辑
+                      <Button size="icon" variant="ghost" className="size-8" title="编辑" onClick={() => setEditing(l)}>
+                        <PencilIcon className="size-4" />
                       </Button>
                       {(l.Mode === "tcp" || l.Mode === "kcp") && (
-                        <Button size="sm" variant="ghost" onClick={() => setCmdFor(l)}>
-                          <TerminalSquareIcon className="size-4" /> 上线命令
+                        <Button size="icon" variant="ghost" className="size-8" title="一键上线命令" onClick={() => setCmdFor(l)}>
+                          <TerminalSquareIcon className="size-4" />
                         </Button>
                       )}
                       <Button
-                        size="sm"
+                        size="icon"
                         variant="ghost"
-                        className="text-destructive"
+                        className="text-destructive size-8"
+                        title="删除"
                         disabled={busyId === l.Id}
                         onClick={() => confirm(`删除监听 #${l.Id} ${l.Remark}?`) && void act(l, "del")}
                       >
-                        删除
+                        <Trash2Icon className="size-4" />
                       </Button>
                     </div>
                   </TableCell>
