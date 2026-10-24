@@ -1615,3 +1615,141 @@ export interface InterceptExecution {
   seq: number;
   items: Activity[];
 }
+
+// =====================================================================
+// Shell 管理(webshell + VShell C2)
+// =====================================================================
+
+export interface WebshellConn {
+  id: string;
+  name: string;
+  url: string;
+  protocol: string;
+  shell_lang: string;
+  exec_mode: string;
+  pass_param: string;
+  cmd_param: string;
+  password_set: boolean;
+  password_tail: string;
+  secret_key?: string;
+  method: string;
+  encoding: string;
+  db_encoding: string;
+  os: string;
+  kind: string;
+  headers: Record<string, string>;
+  timeout_ms: number;
+  remark: string;
+  basic_info: Record<string, unknown> | null;
+  last_probe_at?: string;
+  last_status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebshellProtocolMeta {
+  id: string;
+  label: string;
+  langs: string[];
+  caps: Record<string, string>;
+  kinds: string[];
+  fields: string[];
+  note: string;
+}
+
+export interface WebshellDetectAttempt {
+  protocol: string;
+  error?: string;
+}
+
+export interface WebshellDetectResult {
+  hit: boolean;
+  protocol?: string;
+  shell_lang?: string;
+  exec_mode?: string;
+  os?: string;
+  basic_info?: Record<string, unknown> | null;
+  suffix_hint?: string;
+  kind_hint?: string;
+  error?: string;
+  attempts: WebshellDetectAttempt[];
+}
+
+export interface WebshellDBProfile {
+  id: string;
+  conn_id: string;
+  type: string;
+  host: string;
+  port: string;
+  username: string;
+  password?: string;
+  database: string;
+  remark: string;
+}
+
+export interface WebshellFileEntry {
+  name: string;
+  is_dir: boolean;
+  size: number;
+  perm?: string;
+  owner?: string;
+  mtime?: string;
+  epoch?: number;
+  writable?: boolean | null;
+}
+
+export interface WebshellGenKind {
+  kind: string;
+  label: string;
+  ext: string;
+  lang: string;
+}
+
+export interface WebshellGeneration {
+  id: string;
+  name: string;
+  lang: string;
+  kind: string;
+  ext: string;
+  meta: { password?: string; pass_param?: string; cmd_param?: string; conn_hint?: string } | null;
+  created_at: string;
+}
+
+export interface ShellOpLog {
+  id: number;
+  scope: string;
+  conn_id: string;
+  action: string;
+  detail: string;
+  created_at: string;
+}
+
+export interface VshellServer {
+  id: string;
+  name: string;
+  base_url: string;
+  username: string;
+  password_set: boolean;
+  password_tail: string;
+  timeout_ms: number;
+  remark: string;
+  last_status: string;
+  last_check_at?: string;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VshellHost {
+  Id: number;
+  HostName: string;
+  Addr: string;
+  LocalIP: string;
+  OsName: string;
+  UserName: string;
+  Location: string;
+  Remark: string;
+  IsConnect: boolean;
+  Flow?: string | number;
+  [key: string]: unknown;
+}

@@ -74,6 +74,16 @@ import type {
   SessionTokenUsage,
   Settings,
   Severity,
+  ShellOpLog,
+  VshellHost,
+  VshellServer,
+  WebshellConn,
+  WebshellDBProfile,
+  WebshellDetectResult,
+  WebshellFileEntry,
+  WebshellGenKind,
+  WebshellGeneration,
+  WebshellProtocolMeta,
   SkillCall,
   SkillItem,
   SSProject,
@@ -1323,4 +1333,107 @@ export const api = {
   // 202 即返回，实际下载在后台跑，进度走 /api/update/stream。
   applyUpdate: () => post<{ ok: boolean; target: string }>(`/update/apply`),
   rollbackUpdate: () => post<{ ok: boolean }>(`/update/rollback`),
+
+  // ---- shell 管理:webshell ----
+  webshells: () => get<{ items: WebshellConn[] }>("/shell/webshell").then((r) => arr(r.items)),
+  webshellProtocols: () =>
+    get<{ items: WebshellProtocolMeta[] }>("/shell/webshell/protocols").then((r) => arr(r.items)),
+  webshellCreate: (body: Partial<WebshellConn> & { password?: string }) =>
+    post<WebshellConn>("/shell/webshell", body),
+  webshellUpdate: (id: string, body: Partial<WebshellConn> & { password?: string }) =>
+    patch<WebshellConn>(`/shell/webshell/${id}`, body),
+  webshellDelete: (id: string) => del<{ ok: boolean }>(`/shell/webshell/${id}`),
+  webshellDetect: (body: {
+    url: string;
+    password?: string;
+    secret_key?: string;
+    pass_param?: string;
+    cmd_param?: string;
+    method?: string;
+  }) => post<WebshellDetectResult>("/shell/webshell/detect", body),
+  webshellProbe: (id: string) =>
+    post<{ status: string; os: string; basic_info: Record<string, unknown> | null; conn?: WebshellConn }>(
+      `/shell/webshell/${id}/probe`,
+    ),
+  webshellExec: (id: string, command: string) =>
+    post<{ output: string }>(`/shell/webshell/${id}/exec`, { command }),
+  webshellFile: (id: string, body: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/shell/webshell/${id}/file`, body),
+  webshellUpload: (id: string, path: string, file: File) => {
+    const fd = new FormData();
+    fd.append("path", path);
+    fd.append("file", file);
+    return http<{ ok: boolean; size: number }>(`/shell/webshell/${id}/upload`, {
+      method: "POST",
+      body: fd,
+    });
+  },
+  webshellDBProfiles: (id: string) =>
+    get<{ items: WebshellDBProfile[] }>(`/shell/webshell/${id}/dbprofiles`).then((r) => arr(r.items)),
+  webshellDBProfileSave: (id: string, body: Partial<WebshellDBProfile> & { password?: string }) =>
+    post<WebshellDBProfile>(`/shell/webshell/${id}/dbprofiles`, body),
+  webshellDBProfileDelete: (id: string, pid: string) =>
+    del<{ ok: boolean }>(`/shell/webshell/${id}/dbprofiles/${pid}`),
+  webshellDB: (id: string, body: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/shell/webshell/${id}/db`, body),
+  webshellGenKinds: () =>
+    get<{ items: WebshellGenKind[] }>("/shell/webshell/generators").then((r) => arr(r.items)),
+  webshellGenerate: (body: {
+    kind: string;
+    name?: string;
+    password?: string;
+    pass_param?: string;
+    cmd_param?: string;
+    secret_key?: string;
+  }) =>
+    post<{
+      id: string;
+      name: string;
+      kind: string;
+      lang: string;
+      ext: string;
+      content: string;
+      meta: { password: string; pass_param: string; cmd_param: string; conn_hint: string };
+    }>("/shell/webshell/generate", body),
+  webshellGenerations: () =>
+    get<{ items: WebshellGeneration[] }>("/shell/webshell/generations").then((r) => arr(r.items)),
+  webshellGenerationDelete: (gid: string) => del<{ ok: boolean }>(`/shell/webshell/generations/${gid}`),
+  webshellOps: (id: string, limit = 50) =>
+    get<{ items: ShellOpLog[] }>(`/shell/webshell/${id}/ops?limit=${limit}`).then((r) => arr(r.items)),
+
+  // ---- shell 管理:VShell C2 ----
+  vshellServers: () => get<{ items: VshellServer[] }>("/shell/vshell").then((r) => arr(r.items)),
+  vshellCreate: (body: { name?: string; base_url: string; username?: string; password?: string; timeout_ms?: number; remark?: string }) =>
+    post<VshellServer>("/shell/vshell", body),
+  vshellUpdate: (id: string, body: Partial<VshellServer> & { password?: string }) =>
+    patch<VshellServer>(`/shell/vshell/${id}`, body),
+  vshellDelete: (id: string) => del<{ ok: boolean }>(`/shell/vshell/${id}`),
+  vshellCheck: (id: string) =>
+    post<{ ok: boolean; info: Record<string, unknown> }>(`/shell/vshell/${id}/check`),
+  vshellHosts: (id: string, online = true) =>
+    get<{ items: VshellHost[] }>(`/shell/vshell/${id}/hosts?online=${online ? 1 : 0}`).then((r) => arr(r.items)),
+  vshellExec: (id: string, hostId: number | string, command: string) =>
+    post<{ output: string }>(`/shell/vshell/${id}/exec`, { host_id: hostId, command }),
+  vshellRemark: (id: string, hostId: number | string, remark: string) =>
+    post<{ ok: boolean }>(`/shell/vshell/${id}/remark`, { host_id: hostId, remark }),
+  vshellFile: (id: string, body: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/shell/vshell/${id}/file`, body),
+  vshellUpload: (id: string, hostId: number | string, path: string, file: File) => {
+    const fd = new FormData();
+    fd.append("host_id", String(hostId));
+    fd.append("path", path);
+    fd.append("file", file);
+    return http<{ ok: boolean; size: number }>(`/shell/vshell/${id}/upload`, {
+      method: "POST",
+      body: fd,
+    });
+  },
+  vshellTunnels: (id: string) =>
+    get<{ items: Record<string, unknown>[] }>(`/shell/vshell/${id}/tunnels`).then((r) => arr(r.items)),
+  vshellTunnelAction: (id: string, body: Record<string, unknown>) =>
+    post<{ ok: boolean }>(`/shell/vshell/${id}/tunnel`, body),
+  vshellListeners: (id: string) =>
+    get<{ items: Record<string, unknown>[] }>(`/shell/vshell/${id}/listeners`).then((r) => arr(r.items)),
+  vshellInfo: (id: string) =>
+    get<{ info: Record<string, unknown> }>(`/shell/vshell/${id}/info`).then((r) => r.info),
 };

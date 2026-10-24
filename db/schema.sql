@@ -1388,3 +1388,90 @@ CREATE INDEX IF NOT EXISTS idx_notification_deliveries_batch
     ON notification_deliveries(batch_id) WHERE batch_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_notification_deliveries_channel
     ON notification_deliveries(channel_id, id DESC);
+
+-- =====================================================================
+-- Shell 管理(资产 → Shell 管理:webshell 连接 / VShell C2 站点)
+-- =====================================================================
+
+-- webshell 连接注册表(协议/语言/执行模式/凭据/编码/探活状态)。
+-- 凭据明文存储:webshell 口令属一次性作战凭据(同 dsh 口径),不入加密盘。
+CREATE TABLE IF NOT EXISTS shell_webshells (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL DEFAULT '',
+    url           TEXT NOT NULL,
+    protocol      TEXT NOT NULL DEFAULT 'cmd-system',
+    shell_lang    TEXT NOT NULL DEFAULT 'php',
+    exec_mode     TEXT NOT NULL DEFAULT 'system',
+    pass_param    TEXT NOT NULL DEFAULT 'pass',
+    cmd_param     TEXT NOT NULL DEFAULT 'cmd',
+    password      TEXT NOT NULL DEFAULT '',
+    secret_key    TEXT NOT NULL DEFAULT '',
+    method        TEXT NOT NULL DEFAULT 'post',
+    encoding      TEXT NOT NULL DEFAULT 'auto',
+    db_encoding   TEXT NOT NULL DEFAULT 'auto',
+    os            TEXT NOT NULL DEFAULT 'auto',
+    kind          TEXT NOT NULL DEFAULT 'file',
+    headers_json  TEXT NOT NULL DEFAULT '{}',
+    timeout_ms    INTEGER NOT NULL DEFAULT 20000,
+    remark        TEXT NOT NULL DEFAULT '',
+    basic_info    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_probe_at TIMESTAMPTZ,
+    last_status   TEXT NOT NULL DEFAULT 'unknown',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_shell_webshells_created ON shell_webshells(created_at DESC);
+
+-- 每连接多套数据库连接档案
+CREATE TABLE IF NOT EXISTS shell_webshell_db_profiles (
+    id         TEXT PRIMARY KEY,
+    conn_id    TEXT NOT NULL,
+    type       TEXT NOT NULL DEFAULT 'mysql',
+    host       TEXT NOT NULL DEFAULT '',
+    port       TEXT NOT NULL DEFAULT '',
+    username   TEXT NOT NULL DEFAULT '',
+    password   TEXT NOT NULL DEFAULT '',
+    database   TEXT NOT NULL DEFAULT '',
+    remark     TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_shell_db_profiles_conn ON shell_webshell_db_profiles(conn_id);
+
+-- 生成器产物登记(内容入库,下载走接口;不落服务器文件系统)
+CREATE TABLE IF NOT EXISTS shell_webshell_generations (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    lang       TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    ext        TEXT NOT NULL DEFAULT 'php',
+    content    TEXT NOT NULL,
+    meta_json  JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- VShell C2 站点登记
+CREATE TABLE IF NOT EXISTS shell_vshell_servers (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL DEFAULT '',
+    base_url     TEXT NOT NULL,
+    username     TEXT NOT NULL DEFAULT '',
+    password     TEXT NOT NULL DEFAULT '',
+    timeout_ms   INTEGER NOT NULL DEFAULT 30000,
+    remark       TEXT NOT NULL DEFAULT '',
+    last_status  TEXT NOT NULL DEFAULT 'unknown',
+    last_check_at TIMESTAMPTZ,
+    last_error   TEXT NOT NULL DEFAULT '',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 操作台账(报告门/清痕对账用——每次 exec/file/db 操作记一行)
+CREATE TABLE IF NOT EXISTS shell_op_log (
+    id         BIGSERIAL PRIMARY KEY,
+    scope      TEXT NOT NULL DEFAULT '',
+    conn_id    TEXT NOT NULL DEFAULT '',
+    action     TEXT NOT NULL,
+    detail     TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_shell_op_log_conn ON shell_op_log(conn_id, id DESC);
