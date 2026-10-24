@@ -16,6 +16,9 @@ web/tsconfig.tsbuildinfo
 web/next-env.d.ts
 *.local
 
+# agent rules — 本地规则文件,不入公开仓库
+AGENTS.md
+
 # development tools
 .playwright-mcp/
 .playwright-cli/
