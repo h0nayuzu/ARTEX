@@ -136,7 +136,7 @@ function WebshellTerminal({ conn }: { conn: WebshellConn }) {
     },
     [conn.id],
   );
-  return <ShellTerminal exec={exec} quickOS={conn.os === "windows" ? "windows" : "linux"} height="520px" />;
+  return <ShellTerminal exec={exec} quickOS={conn.os === "windows" ? "windows" : "linux"} height="calc(100vh - 22rem)" minHeight={420} />;
 }
 
 function WebshellInfo({ conn }: { conn: WebshellConn }) {

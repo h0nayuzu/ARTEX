@@ -1,31 +1,57 @@
 "use client";
 
-// VShell 文件管理:主机选择 + 目录浏览器(ls)+ 文本查看/编辑(cat/edit 整文件覆盖)
-// + 上传(multipart)+ 下载(三步链流回浏览器)+ mkdir/rm/mv/touch/wget。
+// VShell 文件管理(仿原版布局):左侧文件树(懒加载展开)+ 右侧
+// [主目录/上级/刷新/路径/Open/新建文件夹/新建文件/wget文件/上传] + 表格。
+// vshell file/ls 行字段:{name, isDir, time, mode, size}(全小写,2026-10 实测)。
 import * as React from "react";
-import { DownloadIcon, FolderUpIcon, RefreshCwIcon, SaveIcon, UploadIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  DownloadIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  FolderUpIcon,
+  HardDriveIcon,
+  PencilIcon,
+  RefreshCwIcon,
+  SaveIcon,
+  TrashIcon,
+  UploadIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 interface VFileItem {
+  name: string;
+  isDir: boolean;
+  time?: string;
+  mode?: string;
+  size?: number;
   Name?: string;
   IsDir?: boolean;
   Size?: number;
   ModTime?: string;
-  [key: string]: unknown;
 }
 
 function fname(e: VFileItem): string {
-  return (e.Name ?? (e.name as string) ?? "") as string;
+  return String(e.name ?? e.Name ?? "");
 }
 function fdir(e: VFileItem): boolean {
-  return Boolean((e.IsDir ?? e.isDir ?? e.isdir) ?? false);
+  return Boolean(e.isDir ?? e.IsDir ?? false);
+}
+function ftime(e: VFileItem): string {
+  return String(e.time ?? e.ModTime ?? "");
+}
+function fsize(e: VFileItem): number {
+  return Number(e.size ?? e.Size ?? 0);
+}
+function fmode(e: VFileItem): string {
+  return String(e.mode ?? "");
 }
 
 export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; fixedHostId?: string }) {
@@ -34,8 +60,9 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   const [dir, setDir] = React.useState("/");
   const [items, setItems] = React.useState<VFileItem[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [viewer, setViewer] = React.useState<{ name: string; content: string; dirty: boolean; binary: boolean } | null>(null);
+  const [viewer, setViewer] = React.useState<{ name: string; content: string; dirty: boolean } | null>(null);
   const [newName, setNewName] = React.useState("");
+  const [wgetURL, setWgetURL] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const uploadRef = React.useRef<HTMLInputElement>(null);
 
@@ -63,9 +90,13 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
     setLoading(true);
     try {
       const r = (await api.vshellFile(server.id, { op: "ls", host_id: hostId, path: dir })) as { items?: VFileItem[] };
-      setItems(r.items ?? []);
+      const list = [...(r.items ?? [])];
+      // 目录在前,各自按名称排序
+      list.sort((a, b) => (fdir(b) ? 1 : 0) - (fdir(a) ? 1 : 0) || fname(a).localeCompare(fname(b)));
+      setItems(list);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "列目录失败");
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -90,7 +121,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   const openFile = async (name: string) => {
     try {
       const r = (await api.vshellFile(server.id, { op: "read", host_id: hostId, path: dir, target: name })) as { content?: string };
-      setViewer({ name, content: r.content ?? "", dirty: false, binary: false });
+      setViewer({ name, content: r.content ?? "", dirty: false });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "读取失败");
     }
@@ -123,130 +154,176 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   };
 
   const parent = () => {
-    const parts = dir.replace(/\/+$/, "").split("/");
-    parts.pop();
-    setDir(parts.length <= 1 ? "/" : parts.join("/"));
+    const norm = dir.replace(/\/+$/, "");
+    const i = norm.lastIndexOf("/");
+    setDir(i <= 0 ? "/" : norm.slice(0, i) || "/");
   };
 
   const current = hosts.find((h) => String(h.Id) === hostId);
+  const crumbs = dir.split("/").filter(Boolean);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        {!fixedHostId && (
-          <Select value={hostId} onValueChange={setHostId}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="选择主机" />
-            </SelectTrigger>
-            <SelectContent>
-              {hosts.map((h) => (
-                <SelectItem key={h.Id} value={String(h.Id)}>
-                  #{h.Id} {h.HostName || h.Addr}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          <Input value={dir} className="font-mono text-xs" onChange={(e) => setDir(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} />
-          <Button size="icon" variant="outline" onClick={() => void load()} disabled={loading || !hostId} title="刷新">
-            <RefreshCwIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+    <div className="flex h-[calc(100vh-15rem)] min-h-[480px] gap-3">
+      {/* 左:文件树 */}
+      <FileTree server={server} hostId={hostId} dir={dir} onNavigate={setDir} />
+
+      {/* 右:工具栏 + 表格 */}
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button size="icon" variant="outline" className="size-8" title="根目录" onClick={() => setDir("/")}>
+            <HardDriveIcon className="size-4" />
           </Button>
-          <Button size="icon" variant="outline" onClick={parent} title="上级">
-            <FolderUpIcon className="h-4 w-4" />
+          <Button size="icon" variant="outline" className="size-8" title="上级" onClick={parent}>
+            <FolderUpIcon className="size-4" />
+          </Button>
+          <Button size="icon" variant="outline" className="size-8" title="刷新" onClick={() => void load()} disabled={loading}>
+            <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+          <Input
+            value={dir}
+            className="h-8 min-w-40 flex-1 font-mono text-xs"
+            onChange={(e) => setDir(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void load()}
+          />
+          <Button size="sm" variant="outline" className="h-8" onClick={() => void load()}>
+            Open
           </Button>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input value={newName} placeholder="新文件/目录名" className="h-8 w-44 text-xs" onChange={(e) => setNewName(e.target.value)} />
-        <Button size="sm" variant="outline" disabled={!newName || busy} onClick={() => void action("mkdir", newName)}>
-          建目录
-        </Button>
-        <Button size="sm" variant="outline" disabled={!newName || busy} onClick={() => void action("touch", newName)}>
-          建文件
-        </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => uploadRef.current?.click()}>
-          <UploadIcon className="h-4 w-4" /> 上传(≤8MB)
-        </Button>
-        <input
-          ref={uploadRef}
-          type="file"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void upload(f);
-            e.target.value = "";
-          }}
-        />
-        {current && (
-          <span className="text-xs text-muted-foreground">
-            {current.OsName} · {current.HostName}
-          </span>
-        )}
-      </div>
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead className="w-24">大小</TableHead>
-            <TableHead className="w-44">修改时间</TableHead>
-            <TableHead className="w-48">操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
-                {loading ? "加载中…" : "空目录"}
-              </TableCell>
-            </TableRow>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Input value={newName} placeholder="名称" className="h-8 w-36 text-xs" onChange={(e) => setNewName(e.target.value)} />
+          <Button size="sm" variant="outline" className="h-8" disabled={!newName || busy} onClick={() => void action("mkdir", newName)}>
+            新建文件夹
+          </Button>
+          <Button size="sm" variant="outline" className="h-8" disabled={!newName || busy} onClick={() => void action("touch", newName)}>
+            新建文件
+          </Button>
+          <Input value={wgetURL} placeholder="wget 文件 URL" className="h-8 w-56 font-mono text-xs" onChange={(e) => setWgetURL(e.target.value)} />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!wgetURL || busy}
+            onClick={() => {
+              const name = wgetURL.split("/").filter(Boolean).pop() ?? "download.bin";
+              void action("wget", name, undefined, wgetURL);
+            }}
+            title="wget 下载到当前目录"
+          >
+            wget文件
+          </Button>
+          <Button size="sm" variant="outline" className="h-8" disabled={busy} onClick={() => uploadRef.current?.click()}>
+            <UploadIcon className="size-4" /> 上传文件
+          </Button>
+          <input
+            ref={uploadRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void upload(f);
+              e.target.value = "";
+            }}
+          />
+          {current && (
+            <span className="text-muted-foreground ml-auto text-xs">
+              #{current.Id} {current.HostName} · {current.OsName} · {current.LocalIP}
+            </span>
           )}
-          {items.map((e, i) => {
-            const name = fname(e);
-            return (
-              <TableRow key={`${name}-${i}`}>
-                <TableCell className="font-mono text-xs">
-                  {fdir(e) ? (
-                    <button className="text-blue-500 hover:underline" onClick={() => setDir(joinPath(dir, name))}>
-                      📁 {name}
-                    </button>
-                  ) : (
-                    <span>📄 {name}</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-xs">{fdir(e) ? "—" : fmtSize(Number(e.Size ?? 0))}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{String(e.ModTime ?? "")}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    {!fdir(e) && (
-                      <>
-                        <Button size="sm" variant="outline" className="h-7" onClick={() => void openFile(name)}>
-                          查看/编辑
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-7" onClick={() => download(name)}>
-                          <DownloadIcon className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-destructive"
-                      disabled={busy}
-                      onClick={() => {
-                        if (confirm(`删除 ${name}?`)) void action(fdir(e) ? "rm" : "rm", name);
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </TableCell>
+        </div>
+
+        {/* 面包屑 */}
+        <div className="flex items-center gap-0.5 text-xs">
+          <button className="hover:text-foreground text-muted-foreground" onClick={() => setDir("/")}>
+            /
+          </button>
+          {crumbs.map((c, i) => (
+            <React.Fragment key={i}>
+              <button
+                className="hover:text-foreground text-muted-foreground"
+                onClick={() => setDir("/" + crumbs.slice(0, i + 1).join("/"))}
+              >
+                {c}
+              </button>
+              {i < crumbs.length - 1 && <span className="text-muted-foreground/50">/</span>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+          <Table>
+            <TableHeader className="sticky top-0 bg-background">
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead className="w-40">Time</TableHead>
+                <TableHead className="w-20">Mode</TableHead>
+                <TableHead className="w-24">Size</TableHead>
+                <TableHead className="w-24">操作</TableHead>
               </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground py-10 text-center">
+                    {loading ? "加载中…" : "暂无数据"}
+                  </TableCell>
+                </TableRow>
+              )}
+              {items.map((e, i) => {
+                const name = fname(e);
+                const isDir = fdir(e);
+                return (
+                  <TableRow key={`${name}-${i}`}>
+                    <TableCell className="max-w-80">
+                      {isDir ? (
+                        <button
+                          className="flex min-w-0 items-center gap-1.5 text-blue-600 hover:underline dark:text-blue-400"
+                          onClick={() => setDir(joinPath(dir, name))}
+                          title={name}
+                        >
+                          <FolderIcon className="size-4 shrink-0 text-amber-500" />
+                          <span className="truncate font-mono text-xs">{name}</span>
+                        </button>
+                      ) : (
+                        <span className="flex min-w-0 items-center gap-1.5" title={name}>
+                          <FileIcon className="text-muted-foreground size-4 shrink-0" />
+                          <span className="truncate font-mono text-xs">{name}</span>
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{ftime(e) || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{fmode(e) || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{isDir ? "—" : fmtSize(fsize(e))}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-0.5">
+                        {!isDir && (
+                          <>
+                            <Button size="icon" variant="ghost" className="size-7" title="查看/编辑" onClick={() => void openFile(name)}>
+                              <PencilIcon className="size-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="size-7" title="下载" onClick={() => download(name)}>
+                              <DownloadIcon className="size-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive size-7"
+                          title="删除"
+                          disabled={busy}
+                          onClick={() => confirm(`删除 ${name}?`) && void action("rm", name)}
+                        >
+                          <TrashIcon className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {viewer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setViewer(null)}>
@@ -257,7 +334,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
               </p>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => void saveFile()} disabled={!viewer.dirty}>
-                  <SaveIcon className="h-4 w-4" /> 保存
+                  <SaveIcon className="size-4" /> 保存
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setViewer(null)}>
                   关闭
@@ -277,6 +354,138 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   );
 }
 
+// ---------------------------------------------------------------- 文件树
+
+interface TreeNode {
+  path: string;
+  name: string;
+  loaded: boolean;
+  children: TreeNode[];
+  expanded: boolean;
+}
+
+function FileTree({
+  server,
+  hostId,
+  dir,
+  onNavigate,
+}: {
+  server: VshellServer;
+  hostId: string;
+  dir: string;
+  onNavigate: (path: string) => void;
+}) {
+  const [roots, setRoots] = React.useState<string[]>(["/"]);
+  const [rootsLoaded, setRootsLoaded] = React.useState(false);
+  const [tree, setTree] = React.useState<TreeNode[]>([]);
+  const [loadingNode, setLoadingNode] = React.useState("");
+
+  // 盘符/根:file/getdisk(linux 返回 ["/"],windows 返回盘符;失败回退 /)
+  React.useEffect(() => {
+    if (!hostId) return;
+    setRootsLoaded(false);
+    (async () => {
+      try {
+        const r = await fetch(`/api/shell/vshell/${server.id}/api/file/getdisk`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "file/getdisk", body: { id: Number(hostId) } }),
+        });
+        const payload = (await r.json()) as { result?: unknown; error?: string };
+        if (!r.ok || !payload.result) throw new Error(payload.error || `HTTP ${r.status}`);
+        const res = payload.result as unknown;
+        const disks: string[] = Array.isArray(res)
+          ? res.map(String)
+          : ((res as { disks?: unknown[]; items?: unknown[] })?.disks ?? (res as { items?: unknown[] })?.items ?? []).map(String);
+        setRoots(disks.length > 0 ? disks : ["/"]);
+      } catch {
+        setRoots(["/"]);
+      } finally {
+        setRootsLoaded(true);
+      }
+    })();
+  }, [server.id, hostId]);
+
+  React.useEffect(() => {
+    setTree(roots.map((r) => ({ path: r, name: r === "/" ? "/" : r, loaded: false, children: [], expanded: false })));
+  }, [roots]);
+
+  const loadChildren = async (node: TreeNode) => {
+    if (node.loaded) return;
+    setLoadingNode(node.path);
+    try {
+      const r = (await api.vshellFile(server.id, { op: "ls", host_id: hostId, path: node.path })) as { items?: VFileItem[] };
+      const children = (r.items ?? [])
+        .filter((e) => fdir(e))
+        .map((e) => ({ path: joinPath(node.path, fname(e)), name: fname(e), loaded: false, children: [], expanded: false }))
+        .slice(0, 200);
+      setTree((t) => updateNode(t, node.path, (n) => ({ ...n, loaded: true, children })));
+    } catch {
+      setTree((t) => updateNode(t, node.path, (n) => ({ ...n, loaded: true, children: [] })));
+    } finally {
+      setLoadingNode("");
+    }
+  };
+
+  const toggle = async (node: TreeNode) => {
+    const willExpand = !node.expanded;
+    setTree((t) => updateNode(t, node.path, (n) => ({ ...n, expanded: willExpand })));
+    if (willExpand) await loadChildren(node);
+  };
+
+  const renderNode = (node: TreeNode, depth: number) => (
+    <div key={node.path}>
+      <div
+        className={`hover:bg-accent flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 ${
+          dir === node.path ? "bg-accent" : ""
+        }`}
+        style={{ paddingLeft: depth * 14 + 4 }}
+        onClick={() => {
+          onNavigate(node.path);
+          void toggle(node);
+        }}
+      >
+        <ChevronRightIcon
+          className={`text-muted-foreground size-3 shrink-0 transition-transform ${node.expanded ? "rotate-90" : ""} ${
+            loadingNode === node.path ? "animate-spin" : ""
+          }`}
+        />
+        {node.expanded ? (
+          <FolderOpenIcon className="size-3.5 shrink-0 text-amber-500" />
+        ) : (
+          <FolderIcon className="size-3.5 shrink-0 text-amber-500" />
+        )}
+        <span className="truncate font-mono text-xs">{node.name}</span>
+      </div>
+      {node.expanded && node.children.map((c) => renderNode(c, depth + 1))}
+    </div>
+  );
+
+  return (
+    <div className="flex w-60 shrink-0 flex-col rounded-md border">
+      <div className="text-muted-foreground flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
+        文件树
+        <span className="ml-auto font-mono">#{hostId}</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-1">
+        {!rootsLoaded ? (
+          <p className="text-muted-foreground p-2 text-xs">加载中…</p>
+        ) : (
+          tree.map((n) => renderNode(n, 0))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function updateNode(nodes: TreeNode[], path: string, patch: (n: TreeNode) => TreeNode): TreeNode[] {
+  return nodes.map((n) => {
+    if (n.path === path) return patch(n);
+    if (n.children.length > 0) return { ...n, children: updateNode(n.children, path, patch) };
+    return n;
+  });
+}
+
 function joinPath(dir: string, name: string) {
   if (dir.endsWith("/")) return dir + name;
   return dir + "/" + name;
@@ -287,3 +496,4 @@ function fmtSize(n: number) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
+

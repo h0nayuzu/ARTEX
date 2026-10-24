@@ -85,7 +85,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
       <p className="text-muted-foreground text-xs">
         vshell 终端为同步阻塞:命令跑完才回传;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
       </p>
-      <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="520px" />
+      <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 22rem)" minHeight={420} />
     </div>
   );
 }
