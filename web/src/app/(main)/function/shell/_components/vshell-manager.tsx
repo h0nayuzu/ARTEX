@@ -1,33 +1,46 @@
 "use client";
 
-// Shell 管理 · VShell 管理:VShell C2 站点登记 + 主机/终端/文件/隧道/监听/概览。
+// VShell 管理子系统:站点登记 + 主机/终端/文件/代理隧道/监听/概览 工作台。
 import * as React from "react";
-import { PlusIcon, RefreshCwIcon, RadioTowerIcon, ServerIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, RadioTowerIcon, RefreshCwIcon, SearchIcon, ServerIcon, Trash2Icon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import type { VshellServer } from "@/lib/types";
 
-import { VshellHostsTab } from "./_components/hosts-tab";
-import { VshellTerminalTab } from "./_components/terminal-tab";
-import { VshellFilesTab } from "./_components/files-tab";
-import { VshellTunnelsTab } from "./_components/tunnels-tab";
-import { VshellMiscTab } from "./_components/misc-tab";
+import { VshellHostsTab } from "./vshell/hosts-tab";
+import { VshellTerminalTab } from "./vshell/terminal-tab";
+import { VshellFilesTab } from "./vshell/files-tab";
+import { VshellTunnelsTab } from "./vshell/tunnels-tab";
+import { VshellMiscTab } from "./vshell/misc-tab";
 
-export default function VshellPage() {
+export function VshellManager() {
   const [servers, setServers] = React.useState<VshellServer[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const [query, setQuery] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("all");
   const [editing, setEditing] = React.useState<VshellServer | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [active, setActive] = React.useState<VshellServer | null>(null);
@@ -75,84 +88,145 @@ export default function VshellPage() {
     }
   };
 
-  return (
-    <div className="flex flex-1 flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <RadioTowerIcon className="h-5 w-5" /> VShell 管理
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            登记 VShell C2 站点(网关 Basic + 账号密码自动登录)——上线主机 / 终端 / 文件 / 代理隧道 / 监听 / 概览。
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={loading}>
-            <RefreshCwIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> 刷新
-          </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <PlusIcon className="h-4 w-4" /> 登记站点
-          </Button>
-        </div>
-      </div>
+  const filtered = servers.filter((s) => {
+    const q = query.trim().toLowerCase();
+    if (q && !`${s.name} ${s.base_url} ${s.remark} ${s.username}`.toLowerCase().includes(q)) return false;
+    if (statusFilter !== "all" && s.last_status !== statusFilter) return false;
+    return true;
+  });
+  const okCount = servers.filter((s) => s.last_status === "ok").length;
 
-      {servers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-            <ServerIcon className="h-10 w-10 opacity-40" />
-            <p className="text-sm">还没有登记任何 VShell C2 站点。</p>
-            <p className="text-xs">站点根地址(如 https://c2.example.com)+ 登录账号密码即可——token 自动缓存、失效自动重登。</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>名称</TableHead>
-              <TableHead>站点地址</TableHead>
-              <TableHead>账号</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>最近检查</TableHead>
-              <TableHead className="w-72">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {servers.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell className="font-medium">{s.name || <span className="text-muted-foreground">(未命名)</span>}</TableCell>
-                <TableCell className="font-mono text-xs">{s.base_url}</TableCell>
-                <TableCell className="font-mono text-xs">{s.username}</TableCell>
-                <TableCell>
-                  {s.last_status === "ok" ? (
-                    <Badge className="bg-emerald-600">在线</Badge>
-                  ) : s.last_status === "error" ? (
-                    <Badge variant="destructive">异常</Badge>
-                  ) : (
-                    <Badge variant="outline">未知</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{s.last_check_at || "—"}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => setActive(s)}>
-                      管理
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={checking === s.id} onClick={() => void check(s)}>
-                      {checking === s.id ? "检查中…" : "检查连接"}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
-                      编辑
-                    </Button>
-                    <Button size="sm" variant="outline" className="text-destructive" onClick={() => setDeleting(s)}>
-                      <Trash2Icon className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+  return (
+    <div className="flex flex-col gap-4 px-4 pb-6 lg:px-6">
+      <Card>
+        <CardContent className="flex flex-col gap-4 px-0 pt-6">
+          <div className="flex flex-wrap items-center gap-2 px-4 lg:px-6">
+            <div className="relative w-full sm:max-w-xs">
+              <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input placeholder="搜索名称 / 地址 / 账号" value={query} className="pl-8" onChange={(e) => setQuery(e.target.value)} />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="清除搜索"
+                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              )}
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="ok">在线</SelectItem>
+                  <SelectItem value="error">异常</SelectItem>
+                  <SelectItem value="unknown">未知</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-muted-foreground hidden text-xs sm:inline">
+                {filtered.length}/{servers.length} 站点 · {okCount} 在线
+              </span>
+              <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={loading}>
+                <RefreshCwIcon className={loading ? "animate-spin" : ""} /> 刷新
+              </Button>
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <PlusIcon /> 登记站点
+              </Button>
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <Empty className="pb-8">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <ServerIcon />
+                </EmptyMedia>
+                <EmptyTitle>{servers.length === 0 ? "还没有登记 VShell C2 站点" : "没有匹配的站点"}</EmptyTitle>
+                <EmptyDescription>
+                  {servers.length === 0
+                    ? "站点根地址 + 登录账号密码即可——token 自动缓存、失效自动重登。"
+                    : "调整搜索词或筛选条件。"}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="overflow-x-auto px-4 lg:px-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>名称</TableHead>
+                    <TableHead>站点地址</TableHead>
+                    <TableHead className="w-36">账号</TableHead>
+                    <TableHead className="w-28">状态</TableHead>
+                    <TableHead className="w-36">最近检查</TableHead>
+                    <TableHead className="w-56">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((s) => (
+                    <TableRow key={s.id} className="cursor-pointer" onClick={() => setActive(s)}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{s.name || "(未命名)"}</span>
+                          {s.remark && <span className="text-muted-foreground text-xs">{s.remark}</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-muted-foreground block max-w-72 truncate font-mono text-xs" title={s.base_url}>
+                          {s.base_url}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{s.username}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {s.last_status === "ok" ? (
+                            <span className="inline-flex size-2 rounded-full bg-emerald-500" title="在线" />
+                          ) : s.last_status === "error" ? (
+                            <span className="inline-flex size-2 rounded-full bg-red-500" title="异常" />
+                          ) : (
+                            <span className="bg-muted-foreground/40 inline-flex size-2 rounded-full" title="未知" />
+                          )}
+                          <span className="text-xs">
+                            {s.last_status === "ok" ? "在线" : s.last_status === "error" ? "异常" : "未知"}
+                          </span>
+                          {s.last_error && (
+                            <span className="text-destructive truncate text-[10px]" title={s.last_error}>
+                              {s.last_error.slice(0, 24)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{s.last_check_at || "—"}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="outline" onClick={() => setActive(s)}>
+                            管理
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={checking === s.id} onClick={() => void check(s)}>
+                            {checking === s.id ? "检查中…" : "检查"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>
+                            编辑
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleting(s)}>
+                            <Trash2Icon className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <VshellServerDialog
         open={creating}
@@ -177,9 +251,7 @@ export default function VshellPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除站点 {deleting?.name || deleting?.base_url}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              只删除 ARTEX 里的站点登记与 token 缓存,不影响 vshell 服务端;操作台账保留。
-            </AlertDialogDescription>
+            <AlertDialogDescription>只删除 ARTEX 里的站点登记与 token 缓存,不影响 vshell 服务端;操作台账保留。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -194,7 +266,7 @@ export default function VshellPage() {
         <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-4xl">
           <SheetHeader className="border-b pb-3">
             <SheetTitle className="flex items-center gap-2">
-              <RadioTowerIcon className="h-4 w-4" /> {active?.name || active?.base_url}
+              <RadioTowerIcon className="size-4" /> {active?.name || "vshell"}
             </SheetTitle>
             <SheetDescription className="font-mono text-xs">{active?.base_url}</SheetDescription>
           </SheetHeader>

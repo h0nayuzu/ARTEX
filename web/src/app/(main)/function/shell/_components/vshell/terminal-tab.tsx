@@ -4,7 +4,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { ShellTerminal } from "../../_components/shell-terminal";
+import { ShellTerminal } from "../shell-terminal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
