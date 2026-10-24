@@ -161,7 +161,7 @@ function StageForm({
         <FieldLabel>客户端类型</FieldLabel>
         <div className="grid w-fit grid-cols-4 gap-2">
           {arches.map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-sm" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}
@@ -170,7 +170,7 @@ function StageForm({
       {extraParam && (
         <Field>
           <FieldLabel>{extraParam.name}</FieldLabel>
-          <Input value={extra} placeholder={extraParam.placeholder} className="font-mono text-xs" onChange={(e) => setExtra(e.target.value)} />
+          <Input value={extra} placeholder={extraParam.placeholder} className="font-mono text-sm" onChange={(e) => setExtra(e.target.value)} />
         </Field>
       )}
       <Field>
@@ -227,7 +227,7 @@ function UpxProxyForm({
         <FieldLabel>客户端类型</FieldLabel>
         <div className="grid w-fit grid-cols-4 gap-2">
           {ARCHES.map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-sm" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}
@@ -259,7 +259,7 @@ function UpxProxyForm({
         </Field>
         <Field>
           <FieldLabel>使用代理(留空不使用)</FieldLabel>
-          <Input value={proxy} placeholder="socks5://1.2.3.4:1080" className="font-mono text-xs" onChange={(e) => setProxy(e.target.value)} />
+          <Input value={proxy} placeholder="socks5://1.2.3.4:1080" className="font-mono text-sm" onChange={(e) => setProxy(e.target.value)} />
         </Field>
       </div>
       <div className="flex gap-2">
@@ -301,7 +301,7 @@ function ListenForm({ server, kind, ebpf }: { server: VshellServer; kind: string
         <FieldLabel>客户端类型</FieldLabel>
         <div className="grid w-fit grid-cols-4 gap-2">
           {(ebpf ? ARCHES.filter((a) => a.startsWith("linux")) : ARCHES).map((a) => (
-            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-xs" onClick={() => setArch(a)}>
+            <Button key={a} size="sm" variant={arch === a ? "default" : "outline"} className="h-9 w-36 justify-start font-mono text-sm" onClick={() => setArch(a)}>
               {a}
             </Button>
           ))}

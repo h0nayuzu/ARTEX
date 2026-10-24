@@ -157,7 +157,7 @@ export function WebshellConnDialog({
           </div>
           <Field>
             <FieldLabel>马地址(URL)*</FieldLabel>
-            <Input value={url} className="font-mono text-xs" placeholder="http://target/uploads/shell.php" onChange={(e) => setURL(e.target.value)} />
+            <Input value={url} className="font-mono text-sm" placeholder="http://target/uploads/shell.php" onChange={(e) => setURL(e.target.value)} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field>
@@ -190,7 +190,7 @@ export function WebshellConnDialog({
               </Select>
             </Field>
           </div>
-          {protoMeta && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{protoMeta.note}</p>}
+          {protoMeta && <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{protoMeta.note}</p>}
           <div className="grid grid-cols-2 gap-3">
             <Field>
               <FieldLabel>连接密码 {conn && conn.password_set ? `(已存 ${conn.password_tail},留空保持)` : ""}</FieldLabel>
@@ -249,7 +249,7 @@ export function WebshellConnDialog({
             </Field>
           </div>
           {detectResult && (
-            <div className="rounded-md border p-2 text-xs">
+            <div className="rounded-md border p-2 text-sm">
               {detectResult.hit ? (
                 <>
                   <p>

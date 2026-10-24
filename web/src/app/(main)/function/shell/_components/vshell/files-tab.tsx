@@ -165,45 +165,45 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   const crumbs = dir.split("/").filter(Boolean);
 
   return (
-    <div className="flex h-[calc(100vh-15rem)] min-h-[480px] gap-3">
+    <div className="flex h-[calc(100vh-9.5rem)] min-h-[560px] gap-3">
       {/* 左:文件树 */}
       <FileTree server={server} hostId={hostId} dir={dir} onNavigate={setDir} />
 
       {/* 右:工具栏 + 表格 */}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button size="icon" variant="outline" className="size-8" title="根目录" onClick={() => setDir("/")}>
+          <Button size="icon" variant="outline" className="size-9" title="根目录" onClick={() => setDir("/")}>
             <HardDriveIcon className="size-4" />
           </Button>
-          <Button size="icon" variant="outline" className="size-8" title="上级" onClick={parent}>
+          <Button size="icon" variant="outline" className="size-9" title="上级" onClick={parent}>
             <FolderUpIcon className="size-4" />
           </Button>
-          <Button size="icon" variant="outline" className="size-8" title="刷新" onClick={() => void load()} disabled={loading}>
+          <Button size="icon" variant="outline" className="size-9" title="刷新" onClick={() => void load()} disabled={loading}>
             <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
           <Input
             value={dir}
-            className="h-8 min-w-40 flex-1 font-mono text-xs"
+            className="h-9 min-w-40 flex-1 font-mono text-sm"
             onChange={(e) => setDir(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void load()}
           />
-          <Button size="sm" variant="outline" className="h-8" onClick={() => void load()}>
+          <Button size="sm" variant="outline" className="h-9" onClick={() => void load()}>
             Open
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Input value={newName} placeholder="名称" className="h-8 w-36 text-xs" onChange={(e) => setNewName(e.target.value)} />
-          <Button size="sm" variant="outline" className="h-8" disabled={!newName || busy} onClick={() => void action("mkdir", newName)}>
+          <Input value={newName} placeholder="名称" className="h-9 w-36 text-sm" onChange={(e) => setNewName(e.target.value)} />
+          <Button size="sm" variant="outline" className="h-9" disabled={!newName || busy} onClick={() => void action("mkdir", newName)}>
             新建文件夹
           </Button>
-          <Button size="sm" variant="outline" className="h-8" disabled={!newName || busy} onClick={() => void action("touch", newName)}>
+          <Button size="sm" variant="outline" className="h-9" disabled={!newName || busy} onClick={() => void action("touch", newName)}>
             新建文件
           </Button>
-          <Input value={wgetURL} placeholder="wget 文件 URL" className="h-8 w-56 font-mono text-xs" onChange={(e) => setWgetURL(e.target.value)} />
+          <Input value={wgetURL} placeholder="wget 文件 URL" className="h-9 w-56 font-mono text-sm" onChange={(e) => setWgetURL(e.target.value)} />
           <Button
             size="sm"
             variant="outline"
-            className="h-8"
+            className="h-9"
             disabled={!wgetURL || busy}
             onClick={() => {
               const name = wgetURL.split("/").filter(Boolean).pop() ?? "download.bin";
@@ -213,7 +213,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
           >
             wget文件
           </Button>
-          <Button size="sm" variant="outline" className="h-8" disabled={busy} onClick={() => uploadRef.current?.click()}>
+          <Button size="sm" variant="outline" className="h-9" disabled={busy} onClick={() => uploadRef.current?.click()}>
             <UploadIcon className="size-4" /> 上传文件
           </Button>
           <input
@@ -227,14 +227,14 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
             }}
           />
           {current && (
-            <span className="text-muted-foreground ml-auto text-xs">
+            <span className="text-muted-foreground ml-auto text-sm">
               #{current.Id} {current.HostName} · {current.OsName} · {current.LocalIP}
             </span>
           )}
         </div>
 
         {/* 面包屑 */}
-        <div className="flex items-center gap-0.5 text-xs">
+        <div className="flex items-center gap-0.5 text-sm">
           <button className="hover:text-foreground text-muted-foreground" onClick={() => setDir("/")}>
             /
           </button>
@@ -252,7 +252,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table>
+          <Table className="[&_td]:py-2.5">
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -285,18 +285,18 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                           title={name}
                         >
                           <FolderIcon className="text-muted-foreground/80 size-4 shrink-0" />
-                          <span className="truncate font-mono text-xs">{name}</span>
+                          <span className="truncate font-mono text-sm">{name}</span>
                         </button>
                       ) : (
                         <span className="flex min-w-0 items-center gap-1.5" title={name}>
                           <FileIcon className="text-muted-foreground/60 size-4 shrink-0" />
-                          <span className="truncate font-mono text-xs">{name}</span>
+                          <span className="truncate font-mono text-sm">{name}</span>
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{ftime(e) || "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{fmode(e) || "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{isDir ? "—" : fmtSize(fsize(e))}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{ftime(e) || "—"}</TableCell>
+                    <TableCell className="font-mono text-sm">{fmode(e) || "—"}</TableCell>
+                    <TableCell className="font-mono text-sm">{isDir ? "—" : fmtSize(fsize(e))}</TableCell>
                     <TableCell>
                       <div className="flex gap-0.5">
                         {!isDir && (
@@ -388,7 +388,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
               </div>
             </div>
             <textarea
-              className="flex-1 resize-none rounded-b-lg bg-black p-3 font-mono text-xs text-zinc-200 outline-none"
+              className="flex-1 resize-none rounded-b-lg bg-black p-3 font-mono text-sm text-zinc-200 outline-none"
               value={viewer.content}
               spellCheck={false}
               onChange={(e) => setViewer((v) => (v ? { ...v, content: e.target.value, dirty: true } : v))}
@@ -505,7 +505,7 @@ function FileTree({
         ) : (
           <FolderIcon className="text-muted-foreground size-3.5 shrink-0" />
         )}
-        <span className="truncate font-mono text-xs">{node.name}</span>
+        <span className="truncate font-mono text-sm">{node.name}</span>
       </div>
       {node.expanded && node.children.map((c) => renderNode(c, depth + 1))}
     </div>
@@ -513,13 +513,13 @@ function FileTree({
 
   return (
     <div className="flex w-60 shrink-0 flex-col rounded-md border">
-      <div className="text-muted-foreground flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
+      <div className="text-muted-foreground flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
         文件树
         <span className="ml-auto font-mono">#{hostId}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-1">
         {!rootsLoaded ? (
-          <p className="text-muted-foreground p-2 text-xs">加载中…</p>
+          <p className="text-muted-foreground p-2 text-sm">加载中…</p>
         ) : (
           tree.map((n) => renderNode(n, 0))
         )}

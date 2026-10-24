@@ -38,8 +38,8 @@
 | `tunnel/dellist` | `{id}` | 批量删 |
 | `terminal/shell` | `{id,command}` | **同步阻塞**;result=输出字符串;退出码非 0 → `message:"exit status N"` 且**无输出**;目标离线 `message:"client is close"` |
 | `screenshot/get` | **GET** `?id=&quality=` | quality=high/mid/low;timeout 建议 120s;返回图片 |
-| `runner/list` | `{}` | result=[{id,name}]——plugins 目录文件清单(内存加载运行;后缀规范:.net→net,elf→elf) |
-| `runner/runplugin` | `{client_id,id,args}` | args 字符串;result=插件输出 |
+| `runner/list` | `{}` | result=[{id,name}]——plugins 目录文件清单;**插件以 name(文件名)为标识**而非数字 id(内存加载运行;后缀规范:.net→net,elf→elf) |
+| `runner/runplugin` | `{id:客户端Id, pluginName:"fscan.x64.elf", procArg:"参数"}` | **原版表单字段**(vD-pDrbd4.js 实证);result=插件输出字符串;选 mimikatz.x64.exe 时原版默认填 `privilege::Debug sekurlsa::logonpasswords exit` |
 | `runner/upload` | multipart `file` | 上传插件到 plugins 目录(前端 timeout 24h 级) |
 | `setting/get` | `{}` | result={dingding_access_token,dingding_key_word,wx_key} |
 | `setting/edit` | 同上三字段 | 无需重启生效 |

@@ -29,7 +29,7 @@ export function InteractiveTerminal({
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
-      fontSize: 13,
+      fontSize: 14,
       lineHeight: 1.25,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       theme: { foreground: "#e4e4e7", background: "#1e1f22", cursor: "#34d399", selectionBackground: "#3f3f46" },

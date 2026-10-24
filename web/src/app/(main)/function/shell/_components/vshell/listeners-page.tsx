@@ -101,7 +101,7 @@ export function VshellListenersPage({ server }: { server: VshellServer }) {
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} /> 刷新
           </Button>
-          <span className="text-muted-foreground ml-auto mr-4 text-xs lg:mr-6">{items.length} 个监听</span>
+          <span className="text-muted-foreground ml-auto mr-4 text-sm lg:mr-6">{items.length} 个监听</span>
         </div>
         <div className="overflow-x-auto px-4 lg:px-6">
           <Table>
@@ -221,7 +221,7 @@ function OneLineCommands({ listener }: { listener: VshellListener }) {
         { label: "Windows 上线命令", cmd: win },
       ].map((b) => (
         <div key={b.label}>
-          <p className="mb-1 text-xs font-medium">{b.label}</p>
+          <p className="mb-1 text-sm font-medium">{b.label}</p>
           <div className="flex items-start gap-2">
             <pre className="flex-1 overflow-auto rounded bg-black p-2 font-mono text-[11px] break-all text-zinc-200">{b.cmd}</pre>
             <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(b.cmd).then(() => toast.success("已复制"))}>
@@ -307,11 +307,11 @@ function ListenerDialog({
           </div>
           <Field>
             <FieldLabel>监听地址 *</FieldLabel>
-            <Input value={form.ListenAddr} className="font-mono text-xs" placeholder="0.0.0.0:8084" onChange={(e) => set({ ListenAddr: e.target.value })} />
+            <Input value={form.ListenAddr} className="font-mono text-sm" placeholder="0.0.0.0:8084" onChange={(e) => set({ ListenAddr: e.target.value })} />
           </Field>
           <Field>
             <FieldLabel>外网连接地址(tcp/ws)</FieldLabel>
-            <Input value={form.ConnectAddr} className="font-mono text-xs" placeholder="127.0.0.1:8084" onChange={(e) => set({ ConnectAddr: e.target.value })} />
+            <Input value={form.ConnectAddr} className="font-mono text-sm" placeholder="127.0.0.1:8084" onChange={(e) => set({ ConnectAddr: e.target.value })} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field>

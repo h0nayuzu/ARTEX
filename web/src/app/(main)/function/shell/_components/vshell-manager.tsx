@@ -119,7 +119,7 @@ export function VshellManager({ onOpen }: { onOpen: (id: string) => void }) {
               </SelectContent>
             </Select>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-muted-foreground hidden text-xs sm:inline">
+              <span className="text-muted-foreground hidden text-sm sm:inline">
                 {filtered.length}/{servers.length} 站点 · {okCount} 在线
               </span>
               <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={loading}>
@@ -164,15 +164,15 @@ export function VshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{s.name || "(未命名)"}</span>
-                          {s.remark && <span className="text-muted-foreground text-xs">{s.remark}</span>}
+                          {s.remark && <span className="text-muted-foreground text-sm">{s.remark}</span>}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-muted-foreground block max-w-72 truncate font-mono text-xs" title={s.base_url}>
+                        <span className="text-muted-foreground block max-w-72 truncate font-mono text-sm" title={s.base_url}>
                           {s.base_url}
                         </span>
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{s.username}</TableCell>
+                      <TableCell className="font-mono text-sm">{s.username}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           {s.last_status === "ok" ? (
@@ -182,7 +182,7 @@ export function VshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                           ) : (
                             <span className="bg-muted-foreground/40 inline-flex size-2 rounded-full" title="未知" />
                           )}
-                          <span className="text-xs">
+                          <span className="text-sm">
                             {s.last_status === "ok" ? "在线" : s.last_status === "error" ? "异常" : "未知"}
                           </span>
                           {s.last_error && (
@@ -192,7 +192,7 @@ export function VshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{s.last_check_at || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{s.last_check_at || "—"}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
                           <Button size="sm" variant="outline" onClick={() => onOpen(s.id)}>

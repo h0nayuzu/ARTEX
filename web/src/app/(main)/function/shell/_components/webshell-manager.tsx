@@ -162,7 +162,7 @@ export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
               </SelectContent>
             </Select>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-muted-foreground hidden text-xs sm:inline">
+              <span className="text-muted-foreground hidden text-sm sm:inline">
                 {filtered.length}/{conns.length} 条连接
               </span>
               <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={loading}>
@@ -210,11 +210,11 @@ export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{c.name || "(未命名)"}</span>
-                          {c.remark && <span className="text-muted-foreground text-xs">{c.remark}</span>}
+                          {c.remark && <span className="text-muted-foreground text-sm">{c.remark}</span>}
                         </div>
                       </TableCell>
                       <TableCell className="max-w-64">
-                        <span className="text-muted-foreground block truncate font-mono text-xs" title={c.url}>
+                        <span className="text-muted-foreground block truncate font-mono text-sm" title={c.url}>
                           {c.url}
                         </span>
                       </TableCell>
@@ -224,7 +224,7 @@ export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                           {c.kind === "mem" && <span className="text-muted-foreground text-[10px]">内存马</span>}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{c.os}</TableCell>
+                      <TableCell className="font-mono text-sm">{c.os}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           {c.last_status === "ok" ? (
@@ -234,7 +234,7 @@ export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
                           ) : (
                             <span className="bg-muted-foreground/40 inline-flex size-2 rounded-full" title="未知" />
                           )}
-                          <span className="text-muted-foreground text-xs">{c.last_probe_at ? c.last_probe_at.slice(5, 16) : "—"}</span>
+                          <span className="text-muted-foreground text-sm">{c.last_probe_at ? c.last_probe_at.slice(5, 16) : "—"}</span>
                         </div>
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>

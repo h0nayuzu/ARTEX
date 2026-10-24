@@ -18,7 +18,7 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
   const [hosts, setHosts] = React.useState<VshellHost[]>([]);
   const [plugins, setPlugins] = React.useState<{ id: number; name: string }[]>([]);
   const [hostId, setHostId] = React.useState("");
-  const [pluginId, setPluginId] = React.useState("");
+  const [pluginName, setPluginName] = React.useState("");
   const [args, setArgs] = React.useState("");
   const [output, setOutput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -43,14 +43,15 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
   }, [load]);
 
   const run = async () => {
-    if (!hostId || !pluginId) {
+    if (!hostId || !pluginName) {
       toast.error("先选择客户端和插件");
       return;
     }
     setBusy(true);
     setOutput("");
     try {
-      const res = (await callApi(server.id, "runner/runplugin", { client_id: Number(hostId), id: Number(pluginId), args })) as unknown;
+      // 原版表单契约:id=客户端 Id,pluginName=插件文件名,procArg=参数
+      const res = (await callApi(server.id, "runner/runplugin", { id: Number(hostId), pluginName, procArg: args })) as unknown;
       setOutput(typeof res === "string" ? res : JSON.stringify(res, null, 2));
       toast.success("插件执行完成");
     } catch (e) {
@@ -107,13 +108,13 @@ export function VshellPluginsPage({ server }: { server: VshellServer }) {
             </Field>
             <Field>
               <FieldLabel>选择插件</FieldLabel>
-              <Select value={pluginId} onValueChange={setPluginId}>
+              <Select value={pluginName} onValueChange={setPluginName}>
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="请选择" />
                 </SelectTrigger>
                 <SelectContent>
                   {plugins.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
+                    <SelectItem key={p.name} value={p.name}>
                       <span className="font-mono text-sm">{p.name}</span>
                     </SelectItem>
                   ))}
@@ -235,9 +236,9 @@ export function HostOption({ host }: { host: { Id: number; HostName: string; Add
   return (
     <span className="flex w-full min-w-0 items-center gap-2 py-0.5">
       <span className={`inline-flex size-2 shrink-0 rounded-full ${host.IsConnect ? "bg-emerald-500" : "bg-zinc-400"}`} />
-      <span className="shrink-0 font-mono text-xs text-zinc-500">#{host.Id}</span>
+      <span className="shrink-0 font-mono text-sm text-zinc-500">#{host.Id}</span>
       <span className="shrink-0 text-sm font-medium">{host.HostName || host.Addr || "(未命名)"}</span>
-      <span className="text-muted-foreground truncate font-mono text-xs">{host.LocalIP || host.Addr}</span>
+      <span className="text-muted-foreground truncate font-mono text-sm">{host.LocalIP || host.Addr}</span>
       {host.OsName && <span className="text-muted-foreground/70 ml-auto shrink-0 font-mono text-[11px]">{host.OsName}</span>}
     </span>
   );

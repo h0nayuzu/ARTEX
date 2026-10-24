@@ -56,7 +56,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
 
   const current = hosts.find((h) => String(h.Id) === hostId);
   const hostLabel = fixedHostId ? (
-    <p className="text-muted-foreground text-xs">
+    <p className="text-muted-foreground text-sm">
       {current ? `${current.OsName} · ${current.LocalIP || current.Addr} · ${current.UserName}` : `#${hostId}`}
     </p>
   ) : null;
@@ -66,13 +66,13 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex overflow-hidden rounded-md border">
           <button
-            className={`px-3 py-1.5 text-xs font-medium ${mode === "interactive" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+            className={`px-3 py-1.5 text-sm font-medium ${mode === "interactive" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
             onClick={() => setMode("interactive")}
           >
             交互式终端
           </button>
           <button
-            className={`border-l px-3 py-1.5 text-xs font-medium ${mode === "basic" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+            className={`border-l px-3 py-1.5 text-sm font-medium ${mode === "basic" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
             onClick={() => setMode("basic")}
           >
             非交互式终端(备用)
@@ -97,14 +97,14 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
       {mode === "interactive" ? (
         <>
           {hostId ? (
-            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 16rem)" minHeight={520} />
+            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 11.5rem)" minHeight={600} />
           ) : (
             <p className="text-muted-foreground py-10 text-center text-sm">先选择一台在线主机。</p>
           )}
         </>
       ) : (
         <>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-sm">
             非交互式(备用):同步阻塞逐条执行;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
           </p>
           <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 19rem)" minHeight={420} />

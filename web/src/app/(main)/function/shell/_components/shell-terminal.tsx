@@ -73,7 +73,7 @@ export function ShellTerminal({
               setCmd(q);
               inputRef.current?.focus();
             }}
-            className="hover:bg-accent rounded border px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 dark:text-zinc-400"
+            className="hover:bg-accent rounded border px-1.5 py-0.5 font-mono text-xs text-zinc-600 dark:text-zinc-400"
           >
             {q}
           </button>
@@ -92,7 +92,7 @@ export function ShellTerminal({
         style={{ height, minHeight }}
         onClick={() => inputRef.current?.focus()}
       >
-        <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[13px] leading-6">
+        <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm leading-6">
           {lines.length === 0 && !busy && <div className="text-zinc-500"># {placeholder}</div>}
           {lines.map((l, i) => (
             <div key={i} className="mb-2">
@@ -106,7 +106,7 @@ export function ShellTerminal({
           {busy && <div className="animate-pulse text-amber-400">… 执行中</div>}
           <div ref={bottomRef} />
         </div>
-        <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 font-mono text-[13px]">
+        <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2 font-mono text-sm">
           <span className="shrink-0 text-emerald-400">$</span>
           <input
             ref={inputRef}
@@ -134,7 +134,7 @@ export function ShellTerminal({
               }
             }}
           />
-          {busy && <span className="shrink-0 text-amber-400/80 text-xs">运行中</span>}
+          {busy && <span className="shrink-0 text-amber-400/80 text-sm">运行中</span>}
         </div>
       </div>
     </div>

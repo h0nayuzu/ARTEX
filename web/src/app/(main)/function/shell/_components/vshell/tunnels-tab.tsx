@@ -102,7 +102,7 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           代理挂在 vshell 服务器端口上:socks5/http 即 <code>vshell服务器IP:端口</code> 配账密直用;tcp/udp 为端口转发(Target 如 10.0.0.5:3389)。
         </p>
         <div className="flex gap-2">
@@ -137,11 +137,11 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
           )}
           {tunnels.map((t, i) => (
             <TableRow key={tid(t) || i}>
-              <TableCell className="font-mono text-xs">#{tid(t)}</TableCell>
-              <TableCell className="font-mono text-xs uppercase">{String(t.Mode ?? t.mode ?? "")}</TableCell>
+              <TableCell className="font-mono text-sm">#{tid(t)}</TableCell>
+              <TableCell className="font-mono text-sm uppercase">{String(t.Mode ?? t.mode ?? "")}</TableCell>
               <TableCell>
                 <button
-                  className="font-mono text-xs text-blue-500 hover:underline"
+                  className="font-mono text-sm text-blue-500 hover:underline"
                   title="点击复制代理地址"
                   onClick={() => {
                     const addr = `${server.base_url.replace(/^https?:\/\//, "").split("/")[0]}:${t.Port ?? t.port}`;
@@ -152,14 +152,14 @@ export function VshellTunnelsTab({ server }: { server: VshellServer }) {
                   {String(t.Port ?? t.port ?? "")}
                 </button>
               </TableCell>
-              <TableCell className="font-mono text-xs">
+              <TableCell className="font-mono text-sm">
                 {["socks5", "http"].includes(String(t.Mode ?? t.mode))
                   ? `${t.Username ?? ""}:${t.Password ?? "****"}`
                   : String(t.Target ?? t.target ?? "—")}
               </TableCell>
-              <TableCell className="font-mono text-xs">#{String(t.ClientId ?? t.clientId ?? "")}</TableCell>
+              <TableCell className="font-mono text-sm">#{String(t.ClientId ?? t.clientId ?? "")}</TableCell>
               <TableCell>{running(t) ? <Badge className="bg-emerald-600">运行</Badge> : <Badge variant="secondary">停止</Badge>}</TableCell>
-              <TableCell className="text-xs">{String(t.Remark ?? t.remark ?? "")}</TableCell>
+              <TableCell className="text-sm">{String(t.Remark ?? t.remark ?? "")}</TableCell>
               <TableCell>
                 <div className="flex gap-1">
                   {running(t) ? (

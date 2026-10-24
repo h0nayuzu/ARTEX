@@ -155,7 +155,7 @@ export function VshellWorkspace({
           <ArrowLeftIcon className="size-4" /> 返回列表
         </Button>
         <h2 className="text-lg font-semibold">{server.name || "VShell 站点"}</h2>
-        <span className="text-muted-foreground font-mono text-xs">{server.base_url}</span>
+        <span className="text-muted-foreground font-mono text-sm">{server.base_url}</span>
         {server.last_status === "ok" ? (
           <Badge className="bg-emerald-600">在线</Badge>
         ) : server.last_status === "error" ? (
@@ -293,7 +293,7 @@ function VshellDashboard({ server }: { server: VshellServer }) {
                     <div key={b.label} className="py-2">
                       <div className="mb-1 flex items-center justify-between">
                         <dt className="text-muted-foreground">{b.label}</dt>
-                        <dd className="font-mono text-xs">{pct}%</dd>
+                        <dd className="font-mono text-sm">{pct}%</dd>
                       </div>
                       <Progress value={pct} className="h-1.5" />
                     </div>
@@ -305,7 +305,7 @@ function VshellDashboard({ server }: { server: VshellServer }) {
                   return (
                     <div key={row.label} className="flex items-center justify-between py-2">
                       <dt className="text-muted-foreground">{row.label}</dt>
-                      <dd className="font-mono text-xs">{row.rate ? fmtRate(Number(v) || 0) : String(v)}</dd>
+                      <dd className="font-mono text-sm">{row.rate ? fmtRate(Number(v) || 0) : String(v)}</dd>
                     </div>
                   );
                 })}
@@ -327,25 +327,25 @@ function VshellDashboard({ server }: { server: VshellServer }) {
                 return (
                   <div key={row.label} className="flex items-center justify-between py-1.5">
                     <dt className="text-muted-foreground">{row.label}</dt>
-                    <dd className="font-mono text-xs">{shown}</dd>
+                    <dd className="font-mono text-sm">{shown}</dd>
                   </div>
                 );
               })}
               <div className="flex items-center justify-between py-1.5">
                 <dt className="text-muted-foreground">站点地址</dt>
-                <dd className="max-w-56 truncate font-mono text-xs" title={server.base_url}>
+                <dd className="max-w-56 truncate font-mono text-sm" title={server.base_url}>
                   {server.base_url}
                 </dd>
               </div>
               <div className="flex items-center justify-between py-1.5">
                 <dt className="text-muted-foreground">最近检查</dt>
-                <dd className="font-mono text-xs">{server.last_check_at || "—"}</dd>
+                <dd className="font-mono text-sm">{server.last_check_at || "—"}</dd>
               </div>
             </dl>
             {info && restEntries.length > 0 && (
               <details className="mt-2">
-                <summary className="text-muted-foreground cursor-pointer text-xs select-none">其余字段({restEntries.length})</summary>
-                <dl className="divide-y mt-1 text-xs">
+                <summary className="text-muted-foreground cursor-pointer text-sm select-none">其余字段({restEntries.length})</summary>
+                <dl className="divide-y mt-1 text-sm">
                   {restEntries.map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between py-1">
                       <dt className="text-muted-foreground font-mono">{k}</dt>
@@ -468,7 +468,7 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
           <label className="flex items-center gap-2">
             <Switch checked={auto} onCheckedChange={setAuto} /> 10s 自动刷新
           </label>
-          <span className="text-muted-foreground text-xs">
+          <span className="text-muted-foreground text-sm">
             {hosts.length} 台 · 在线 {hosts.filter((h) => h.IsConnect).length}
           </span>
           <Button size="sm" variant="outline" className="ml-auto" onClick={() => setForward(true)}>
@@ -479,7 +479,7 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
           </Button>
         </div>
         <div className="overflow-x-auto px-4 lg:px-6">
-          <Table>
+          <Table className="[&_td]:py-3">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-14">ID</TableHead>
@@ -622,10 +622,10 @@ function VshellListeners({ server }: { server: VshellServer }) {
                 const online = ["run", "running", "online", "true", "1", "在线", "启动"].includes(raw.toLowerCase());
                 return (
                   <TableRow key={i}>
-                    <TableCell className="font-mono text-xs">#{String(l.Id ?? l.id ?? i)}</TableCell>
-                    <TableCell className="text-xs">{String(l.Name ?? l.name ?? l.Remark ?? l.remark ?? "—")}</TableCell>
-                    <TableCell className="font-mono text-xs uppercase">{String(l.Protocol ?? l.protocol ?? l.Mode ?? l.mode ?? "")}</TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="font-mono text-sm">#{String(l.Id ?? l.id ?? i)}</TableCell>
+                    <TableCell className="text-sm">{String(l.Name ?? l.name ?? l.Remark ?? l.remark ?? "—")}</TableCell>
+                    <TableCell className="font-mono text-sm uppercase">{String(l.Protocol ?? l.protocol ?? l.Mode ?? l.mode ?? "")}</TableCell>
+                    <TableCell className="font-mono text-sm">
                       {String(l.Host ?? l.host ?? "")}
                       {l.Port != null || l.port != null ? `:${String(l.Port ?? l.port)}` : ""}
                       {l.Url ? ` ${String(l.Url)}` : ""}

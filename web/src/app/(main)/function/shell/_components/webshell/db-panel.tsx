@@ -149,7 +149,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
           <RefreshCwIcon className="h-4 w-4" />
         </Button>
         {profile && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {profile.type}://{profile.host}:{profile.port}/{profile.database || "(未指定库)"}
           </span>
         )}
@@ -196,7 +196,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
       </div>
 
       <textarea
-        className="h-24 w-full rounded-md border bg-black p-3 font-mono text-xs text-zinc-200 outline-none"
+        className="h-24 w-full rounded-md border bg-black p-3 font-mono text-sm text-zinc-200 outline-none"
         placeholder="SQL(只读心态操作;SELECT 预览前 200 行)"
         value={sql}
         spellCheck={false}
@@ -212,7 +212,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
         <Button size="sm" disabled={busy || !sql.trim()} onClick={() => void runSQL()}>
           {busy ? "执行中…" : "执行(⌘/Ctrl+Enter)"}
         </Button>
-        <span className="text-xs text-muted-foreground">执行走目标机 PDO——不依赖目标机 CLI 客户端。</span>
+        <span className="text-sm text-muted-foreground">执行走目标机 PDO——不依赖目标机 CLI 客户端。</span>
       </div>
 
       {result && (
@@ -224,7 +224,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
               <TableHeader>
                 <TableRow>
                   {result.cols.map((c) => (
-                    <TableHead key={c} className="font-mono text-xs">
+                    <TableHead key={c} className="font-mono text-sm">
                       {c}
                     </TableHead>
                   ))}
@@ -234,7 +234,7 @@ export function WebshellDBPanel({ conn }: { conn: WebshellConn }) {
                 {(result.rows ?? []).map((row, i) => (
                   <TableRow key={i}>
                     {row.map((cell, j) => (
-                      <TableCell key={j} className="max-w-64 truncate font-mono text-xs" title={cell ?? ""}>
+                      <TableCell key={j} className="max-w-64 truncate font-mono text-sm" title={cell ?? ""}>
                         {cell ?? <span className="text-muted-foreground">NULL</span>}
                       </TableCell>
                     ))}

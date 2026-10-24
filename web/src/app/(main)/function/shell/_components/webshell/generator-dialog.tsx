@@ -110,7 +110,7 @@ export function WebshellGeneratorDialog({ open, onOpenChange }: { open: boolean;
               <SparklesIcon className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} /> {busy ? "生成中…" : "生成"}
             </Button>
             {product && (
-              <div className="rounded-md border p-2 text-xs">
+              <div className="rounded-md border p-2 text-sm">
                 <p>
                   ✅ <b>{product.name}</b> — 口令 <code>{product.meta.password}</code>
                 </p>
@@ -146,17 +146,17 @@ export function WebshellGeneratorDialog({ open, onOpenChange }: { open: boolean;
                 <TableBody>
                   {history.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={3} className="py-4 text-center text-xs text-muted-foreground">
+                      <TableCell colSpan={3} className="py-4 text-center text-sm text-muted-foreground">
                         暂无
                       </TableCell>
                     </TableRow>
                   )}
                   {history.map((g) => (
                     <TableRow key={g.id}>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono text-sm">
                         {g.name}.{g.ext}
                       </TableCell>
-                      <TableCell className="text-xs">{g.kind}</TableCell>
+                      <TableCell className="text-sm">{g.kind}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button size="sm" variant="outline" className="h-7" onClick={() => window.open(`/api/shell/webshell/generations/${g.id}/download`, "_blank")}>

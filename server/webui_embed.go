@@ -31,6 +31,13 @@ func (s *Server) webuiHandler() http.Handler {
 		if p == "" {
 			p = "index.html"
 		}
+		// 入口 HTML 永远协商缓存(不发 304 旧壳),否则发版后浏览器停在旧前端;
+		// _next 资源带内容 hash,放一年 immutable。
+		if strings.HasPrefix(p, "_next/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		// 1) exact file (assets: _next/*, favicon.ico, ...)
 		// 2) route dir → <p>/index.html (trailingSlash export)
 		// 3) <p>.html

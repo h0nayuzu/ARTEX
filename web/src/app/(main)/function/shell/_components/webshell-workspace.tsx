@@ -93,11 +93,11 @@ export function WebshellWorkspace({ id, onBack }: { id: string; onBack: () => vo
         <h2 className="text-lg font-semibold">{conn.name || "webshell"}</h2>
         <Badge className={PROTOCOL_BADGE[conn.protocol] ?? ""}>{PROTOCOL_LABEL[conn.protocol] ?? conn.protocol}</Badge>
         {conn.kind === "mem" && <Badge variant="outline">内存马</Badge>}
-        <span className="text-muted-foreground truncate font-mono text-xs" title={conn.url}>
+        <span className="text-muted-foreground truncate font-mono text-sm" title={conn.url}>
           {conn.url}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {conn.os && <span className="text-muted-foreground font-mono text-xs">{conn.os}</span>}
+          {conn.os && <span className="text-muted-foreground font-mono text-sm">{conn.os}</span>}
           <Button variant="outline" size="sm" disabled={probing} onClick={() => void probe()}>
             <RefreshCwIcon className={`size-4 ${probing ? "animate-spin" : ""}`} /> {probing ? "探测中…" : "探活"}
           </Button>
@@ -149,7 +149,7 @@ function WebshellInfo({ conn }: { conn: WebshellConn }) {
       <Card className="py-0">
         <div className="px-5 py-4">
           <p className="mb-2 text-sm font-medium">基本信息(最近一次探活)</p>
-          <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+          <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-sm">
             {conn.basic_info && Object.keys(conn.basic_info).length > 0 ? JSON.stringify(conn.basic_info, null, 2) : "暂无——点「探活」采集。"}
           </pre>
         </div>
@@ -178,16 +178,16 @@ function WebshellInfo({ conn }: { conn: WebshellConn }) {
               <TableBody>
                 {ops.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-muted-foreground py-6 text-center text-xs">
+                    <TableCell colSpan={3} className="text-muted-foreground py-6 text-center text-sm">
                       暂无记录
                     </TableCell>
                   </TableRow>
                 )}
                 {ops.map((l) => (
                   <TableRow key={l.id}>
-                    <TableCell className="text-muted-foreground text-xs">{new Date(l.created_at).toLocaleString("zh-CN", { hour12: false })}</TableCell>
-                    <TableCell className="font-mono text-xs">{l.action}</TableCell>
-                    <TableCell className="max-w-[36rem] truncate font-mono text-xs" title={l.detail}>
+                    <TableCell className="text-muted-foreground text-sm">{new Date(l.created_at).toLocaleString("zh-CN", { hour12: false })}</TableCell>
+                    <TableCell className="font-mono text-sm">{l.action}</TableCell>
+                    <TableCell className="max-w-[36rem] truncate font-mono text-sm" title={l.detail}>
                       {l.detail}
                     </TableCell>
                   </TableRow>

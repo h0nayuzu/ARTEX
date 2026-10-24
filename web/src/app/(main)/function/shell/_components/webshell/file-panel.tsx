@@ -125,7 +125,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1">
-        <Input value={dir} className="font-mono text-xs" onChange={(e) => setDir(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} />
+        <Input value={dir} className="font-mono text-sm" onChange={(e) => setDir(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} />
         <Button size="icon" variant="outline" onClick={() => void load()} disabled={loading} title="刷新">
           <RefreshCwIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
@@ -148,7 +148,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Input value={newName} placeholder="新名字" className="h-8 w-36 text-xs" onChange={(e) => setNewName(e.target.value)} />
+        <Input value={newName} placeholder="新名字" className="h-8 w-36 text-sm" onChange={(e) => setNewName(e.target.value)} />
         <Button size="sm" variant="outline" disabled={!newName || busy} onClick={() => void action("mkdir", fullPath(newName))}>
           建目录
         </Button>
@@ -165,7 +165,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
             e.target.value = "";
           }}
         />
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           读写走原生操作码/eval 片段,二进制安全自动分块;命令通道自动降级命令翻译。
         </span>
       </div>
@@ -190,7 +190,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
           )}
           {items.map((e) => (
             <TableRow key={e.name}>
-              <TableCell className="font-mono text-xs">
+              <TableCell className="font-mono text-sm">
                 {e.is_dir ? (
                   <button className="text-blue-500 hover:underline" onClick={() => setDir(fullPath(e.name))}>
                     📁 {e.name}
@@ -199,9 +199,9 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
                   <span>📄 {e.name}</span>
                 )}
               </TableCell>
-              <TableCell className="text-xs">{e.is_dir ? "—" : fmtSize(e.size)}</TableCell>
-              <TableCell className="font-mono text-xs">{e.perm || "—"}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">{e.mtime || "—"}</TableCell>
+              <TableCell className="text-sm">{e.is_dir ? "—" : fmtSize(e.size)}</TableCell>
+              <TableCell className="font-mono text-sm">{e.perm || "—"}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{e.mtime || "—"}</TableCell>
               <TableCell>
                 <div className="flex flex-wrap gap-1">
                   {!e.is_dir && (
@@ -278,7 +278,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
             <div className="flex items-center justify-between border-b px-4 py-2">
               <p className="font-mono text-sm font-medium">
                 {viewer.path} {viewer.dirty && <span className="text-amber-500">(未保存)</span>}
-                {viewer.binary && <span className="ml-2 text-xs text-red-500">二进制文件(只读)</span>}
+                {viewer.binary && <span className="ml-2 text-sm text-red-500">二进制文件(只读)</span>}
               </p>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => void saveFile()} disabled={!viewer.dirty || viewer.binary}>
@@ -293,7 +293,7 @@ export function WebshellFilePanel({ conn }: { conn: WebshellConn }) {
               <p className="flex-1 p-4 text-sm text-muted-foreground">二进制文件——用「下载」取回本机处理。</p>
             ) : (
               <textarea
-                className="flex-1 resize-none rounded-b-lg bg-black p-3 font-mono text-xs text-zinc-200 outline-none"
+                className="flex-1 resize-none rounded-b-lg bg-black p-3 font-mono text-sm text-zinc-200 outline-none"
                 value={viewer.text}
                 spellCheck={false}
                 onChange={(e) => setViewer((v) => (v ? { ...v, text: e.target.value, dirty: true } : v))}
