@@ -12,12 +12,10 @@ import { Terminal } from "@xterm/xterm";
 export function InteractiveTerminal({
   serverId,
   hostId,
-  height = "100%",
   minHeight = 420,
 }: {
   serverId: string;
   hostId: string;
-  height?: string;
   minHeight?: number;
 }) {
   const boxRef = React.useRef<HTMLDivElement>(null);
@@ -84,7 +82,7 @@ export function InteractiveTerminal({
   }, [serverId, hostId]);
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-zinc-800 bg-[#1e1f22] p-1" style={{ height, minHeight }}>
+    <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-zinc-800 bg-[#1e1f22] p-1" style={{ minHeight }}>
       <div ref={boxRef} className="h-full w-full" />
       <span
         className={`absolute top-2 right-3 rounded-full px-2 py-0.5 text-[10px] font-medium ${

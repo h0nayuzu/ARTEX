@@ -85,7 +85,7 @@ export function WebshellWorkspace({ id, onBack }: { id: string; onBack: () => vo
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 px-4 pb-6 lg:px-6">
+    <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4 lg:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeftIcon className="size-4" /> 返回列表
@@ -104,17 +104,17 @@ export function WebshellWorkspace({ id, onBack }: { id: string; onBack: () => vo
         </div>
       </div>
 
-      <Tabs defaultValue="terminal" className="flex flex-1 flex-col gap-4">
+      <Tabs defaultValue="terminal" className="flex min-h-0 flex-1 flex-col gap-4">
         <TabsList>
           <TabsTrigger value="terminal">终端</TabsTrigger>
           <TabsTrigger value="files">文件</TabsTrigger>
           <TabsTrigger value="db">数据库</TabsTrigger>
           <TabsTrigger value="info">信息 / 台账</TabsTrigger>
         </TabsList>
-        <TabsContent value="terminal" className="mt-0">
+        <TabsContent value="terminal" className="mt-0 flex min-h-0 flex-1 flex-col">
           <WebshellTerminal conn={conn} />
         </TabsContent>
-        <TabsContent value="files" className="mt-0">
+        <TabsContent value="files" className="mt-0 flex min-h-0 flex-1 flex-col">
           <WebshellFilePanel conn={conn} />
         </TabsContent>
         <TabsContent value="db" className="mt-0">
@@ -136,7 +136,7 @@ function WebshellTerminal({ conn }: { conn: WebshellConn }) {
     },
     [conn.id],
   );
-  return <ShellTerminal exec={exec} quickOS={conn.os === "windows" ? "windows" : "linux"} height="calc(100vh - 17rem)" minHeight={480} />;
+  return <ShellTerminal exec={exec} quickOS={conn.os === "windows" ? "windows" : "linux"} minHeight={480} />;
 }
 
 function WebshellInfo({ conn }: { conn: WebshellConn }) {

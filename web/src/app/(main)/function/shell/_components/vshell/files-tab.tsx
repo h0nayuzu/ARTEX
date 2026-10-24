@@ -165,7 +165,7 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
   const crumbs = dir.split("/").filter(Boolean);
 
   return (
-    <div className="flex h-[calc(100vh-9.5rem)] min-h-[560px] gap-3">
+    <div className="flex h-full min-h-0 flex-1 gap-3">
       {/* 左:文件树 */}
       <FileTree server={server} hostId={hostId} dir={dir} onNavigate={setDir} />
 

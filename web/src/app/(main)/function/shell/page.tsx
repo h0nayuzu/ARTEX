@@ -35,7 +35,7 @@ export default function ShellPage() {
     <Tabs
       value={route.tab}
       onValueChange={(v) => navigate({ tab: v as "webshell" | "vshell" })}
-      className="flex flex-1 flex-col gap-4"
+      className="flex min-h-0 flex-1 flex-col gap-4 pt-4" data-content-padding="false"
     >
       <TabsList className="mx-4 lg:mx-6">
         <TabsTrigger value="webshell">Webshell 管理</TabsTrigger>

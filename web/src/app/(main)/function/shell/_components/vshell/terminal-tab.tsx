@@ -97,7 +97,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
       {mode === "interactive" ? (
         <>
           {hostId ? (
-            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 11.5rem)" minHeight={600} />
+            <InteractiveTerminal serverId={server.id} hostId={hostId} minHeight={480} />
           ) : (
             <p className="text-muted-foreground py-10 text-center text-sm">先选择一台在线主机。</p>
           )}
@@ -107,7 +107,7 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
           <p className="text-muted-foreground text-sm">
             非交互式(备用):同步阻塞逐条执行;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
           </p>
-          <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 19rem)" minHeight={420} />
+          <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} minHeight={420} />
         </>
       )}
     </div>
