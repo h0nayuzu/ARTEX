@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
@@ -272,7 +273,9 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                 const name = fname(e);
                 const isDir = fdir(e);
                 return (
-                  <TableRow key={`${name}-${i}`}>
+                  <ContextMenu key={`${name}-${i}`}>
+                  <ContextMenuTrigger asChild>
+                  <TableRow className="cursor-default select-none">
                     <TableCell className="max-w-80">
                       {isDir ? (
                         <button
@@ -280,12 +283,12 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                           onClick={() => setDir(joinPath(dir, name))}
                           title={name}
                         >
-                          <FolderIcon className="size-4 shrink-0 text-amber-500" />
+                          <FolderIcon className="text-muted-foreground/80 size-4 shrink-0" />
                           <span className="truncate font-mono text-xs">{name}</span>
                         </button>
                       ) : (
                         <span className="flex min-w-0 items-center gap-1.5" title={name}>
-                          <FileIcon className="text-muted-foreground size-4 shrink-0" />
+                          <FileIcon className="text-muted-foreground/60 size-4 shrink-0" />
                           <span className="truncate font-mono text-xs">{name}</span>
                         </span>
                       )}
@@ -318,6 +321,48 @@ export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; 
                       </div>
                     </TableCell>
                   </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-44">
+                    {isDir ? (
+                      <ContextMenuItem onClick={() => setDir(joinPath(dir, name))}>打开</ContextMenuItem>
+                    ) : (
+                      <ContextMenuItem onClick={() => void openFile(name)}>查看 / 编辑</ContextMenuItem>
+                    )}
+                    {!isDir && <ContextMenuItem onClick={() => download(name)}>下载</ContextMenuItem>}
+                    <ContextMenuItem onClick={() => void navigator.clipboard.writeText(joinPath(dir, name)).then(() => toast.success("已拷贝路径"))}>
+                      拷贝路径
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => {
+                        const to = prompt(`重命名 ${name} 为:`, name);
+                        if (to && to !== name) void action("mv", name, to);
+                      }}
+                    >
+                      重命名
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => {
+                        const v = prompt(`修改时间 ${name}(YYYY-MM-DD HH:MM:SS 或 epoch 秒):`, ftime(e));
+                        if (!v) return;
+                        const epoch = /^\d+$/.test(v.trim()) ? Number(v.trim()) : Math.floor(new Date(v.replace(" ", "T") + "Z").getTime() / 1000);
+                        if (!epoch || Number.isNaN(epoch)) {
+                          toast.error("时间格式无法解析");
+                          return;
+                        }
+                        void genericModifyTime(server.id, hostId, dir, name, epoch);
+                      }}
+                    >
+                      修改时间
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => confirm(`删除 ${name}?`) && void action("rm", name)}
+                    >
+                      删除
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                  </ContextMenu>
                 );
               })}
             </TableBody>
@@ -394,9 +439,13 @@ function FileTree({
         const payload = (await r.json()) as { result?: unknown; error?: string };
         if (!r.ok || !payload.result) throw new Error(payload.error || `HTTP ${r.status}`);
         const res = payload.result as unknown;
-        const disks: string[] = Array.isArray(res)
-          ? res.map(String)
-          : ((res as { disks?: unknown[]; items?: unknown[] })?.disks ?? (res as { items?: unknown[] })?.items ?? []).map(String);
+        // 实测返回 [{name:"/",isDir:true,...}]——对象取 name,字符串直用
+        const raw: unknown[] = Array.isArray(res)
+          ? res
+          : ((res as { disks?: unknown[]; items?: unknown[] })?.disks ?? (res as { items?: unknown[] })?.items ?? []);
+        const disks = raw
+          .map((v) => (typeof v === "string" ? v : String((v as { name?: string; Name?: string; path?: string })?.name ?? (v as { Name?: string })?.Name ?? (v as { path?: string })?.path ?? "")))
+          .filter(Boolean);
         setRoots(disks.length > 0 ? disks : ["/"]);
       } catch {
         setRoots(["/"]);
@@ -451,9 +500,9 @@ function FileTree({
           }`}
         />
         {node.expanded ? (
-          <FolderOpenIcon className="size-3.5 shrink-0 text-amber-500" />
+          <FolderOpenIcon className="text-muted-foreground size-3.5 shrink-0" />
         ) : (
-          <FolderIcon className="size-3.5 shrink-0 text-amber-500" />
+          <FolderIcon className="text-muted-foreground size-3.5 shrink-0" />
         )}
         <span className="truncate font-mono text-xs">{node.name}</span>
       </div>
@@ -497,3 +546,20 @@ function fmtSize(n: number) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+
+
+// file/modifytime 走通用代理(参数名按 vshell 端点惯例,失败透传错误)。
+async function genericModifyTime(serverId: string, hostId: string, path: string, target: string, epoch: number) {
+  try {
+    const r = await fetch(`/api/shell/vshell/${serverId}/api/file/modifytime`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: "file/modifytime", body: { id: Number(hostId), path, target, time: epoch, timestamp: epoch } }),
+    });
+    const payload = (await r.json().catch(() => ({}))) as { error?: string };
+    if (!r.ok) throw new Error(payload.error || `HTTP ${r.status}`);
+    toast.success("时间已修改");
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : "修改时间失败");
+  }
+}

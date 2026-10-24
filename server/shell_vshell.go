@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"crypto/tls"
+	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -1339,4 +1341,95 @@ func (s *Server) vshellRunnerUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	st.LogShellOp("vshell", server.ID, "runner.upload", header.Filename)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "size": len(content)})
+}
+
+// ensureToken 取当前 JWT(必要时先登录)。
+func (c *VshellClient) ensureToken(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	if c.token != "" {
+		tok := c.token
+		c.mu.Unlock()
+		return tok, nil
+	}
+	c.mu.Unlock()
+	if err := c.login(ctx); err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.token, nil
+}
+
+// vshellTerminalWS 真·交互式终端:浏览器 WS ↔ vshell /api/terminal/ws 双向代理。
+// 上游握手带 Basic 网关 + ?token=<vshellJWT>;帧原样透传(xterm AttachAddon 协议)。
+func (s *Server) vshellTerminalWS(w http.ResponseWriter, r *http.Request) {
+	server, st, ok := s.getVshellServerByID(w, r)
+	if !ok {
+		return
+	}
+	hostID := strings.TrimSpace(r.URL.Query().Get("host"))
+	if hostID == "" {
+		writeErr(w, http.StatusBadRequest, "host 缺失")
+		return
+	}
+	client := vshellClientFor(server)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	tok, err := client.ensureToken(ctx)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	wsBase := strings.Replace(client.base, "http://", "ws://", 1)
+	wsBase = strings.Replace(wsBase, "https://", "wss://", 1)
+	upURL := wsBase + "/api/terminal/ws?id=" + url.QueryEscape(hostID) + "&token=" + url.QueryEscape(tok)
+
+	dialer := websocket.Dialer{HandshakeTimeout: 15 * time.Second, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	upConn, resp, err := dialer.Dial(upURL, http.Header{"Authorization": []string{client.basicAuth}})
+	if err != nil {
+		detail := err.Error()
+		if resp != nil {
+			detail += fmt.Sprintf("(HTTP %d)", resp.StatusCode)
+		}
+		writeErr(w, http.StatusBadGateway, "vshell 终端握手失败:"+detail)
+		return
+	}
+	defer upConn.Close()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	downConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer downConn.Close()
+	st.LogShellOp("vshell", server.ID, "terminal.ws", "host="+hostID)
+
+	// 双向泵:任何一方断开即收尾
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			mt, data, err := downConn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := upConn.WriteMessage(mt, data); err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			mt, data, err := upConn.ReadMessage()
+			if err != nil {
+				downConn.Close()
+				return
+			}
+			if err := downConn.WriteMessage(mt, data); err != nil {
+				return
+			}
+		}
+	}()
+	<-done
 }

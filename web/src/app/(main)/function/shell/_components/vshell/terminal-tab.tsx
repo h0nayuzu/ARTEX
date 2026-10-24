@@ -1,15 +1,18 @@
 "use client";
 
-// VShell 终端:选主机逐条同步执行(/terminal/shell)。
-// fixedHostId 由工作台(客户端管理 → 终端)跳入时传入,跳过主机选择器。
+// VShell 终端:交互式(xterm↔WS 代理,真终端)为主,非交互式(terminal/shell 同步逐条)备用——
+// 与原版「交互式终端 / 非交互式终端(备用)」按钮组一致。
 import * as React from "react";
 
 import { ShellTerminal } from "../shell-terminal";
+import { InteractiveTerminal } from "./interactive-terminal";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServer; fixedHostId?: string }) {
+  const [mode, setMode] = React.useState<"interactive" | "basic">("interactive");
   const [hosts, setHosts] = React.useState<VshellHost[]>([]);
   const [hostId, setHostId] = React.useState<string>(fixedHostId ?? "");
 
@@ -33,7 +36,6 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
     };
   }, [server.id, fixedHostId]);
 
-  // 聚焦主机时补一次信息用于展示系统类型
   React.useEffect(() => {
     if (!fixedHostId || hosts.length > 0) return;
     api
@@ -52,14 +54,32 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
   );
 
   const current = hosts.find((h) => String(h.Id) === hostId);
+  const hostLabel = fixedHostId ? (
+    <p className="text-muted-foreground text-xs">
+      {current ? `${current.OsName} · ${current.LocalIP || current.Addr} · ${current.UserName}` : `#${hostId}`}
+    </p>
+  ) : null;
 
   return (
-    <div className="flex flex-col gap-3">
-      {!fixedHostId && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">目标主机:</span>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex overflow-hidden rounded-md border">
+          <button
+            className={`px-3 py-1.5 text-xs font-medium ${mode === "interactive" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+            onClick={() => setMode("interactive")}
+          >
+            交互式终端
+          </button>
+          <button
+            className={`border-l px-3 py-1.5 text-xs font-medium ${mode === "basic" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+            onClick={() => setMode("basic")}
+          >
+            非交互式终端(备用)
+          </button>
+        </div>
+        {!fixedHostId && (
           <Select value={hostId} onValueChange={setHostId}>
-            <SelectTrigger className="w-72">
+            <SelectTrigger className="w-64">
               <SelectValue placeholder="选择主机" />
             </SelectTrigger>
             <SelectContent>
@@ -70,22 +90,25 @@ export function VshellTerminalTab({ server, fixedHostId }: { server: VshellServe
               ))}
             </SelectContent>
           </Select>
-          {current && (
-            <span className="text-muted-foreground text-xs">
-              {current.OsName} · {current.LocalIP || current.Addr}
-            </span>
+        )}
+        {hostLabel}
+      </div>
+      {mode === "interactive" ? (
+        <>
+          {hostId ? (
+            <InteractiveTerminal serverId={server.id} hostId={hostId} height="calc(100vh - 22rem)" />
+          ) : (
+            <p className="text-muted-foreground py-10 text-center text-sm">先选择一台在线主机。</p>
           )}
-        </div>
+        </>
+      ) : (
+        <>
+          <p className="text-muted-foreground text-xs">
+            非交互式(备用):同步阻塞逐条执行;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
+          </p>
+          <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 26rem)" minHeight={360} />
+        </>
       )}
-      {fixedHostId && current && (
-        <p className="text-muted-foreground text-xs">
-          {current.OsName} · {current.LocalIP || current.Addr} · {current.UserName}
-        </p>
-      )}
-      <p className="text-muted-foreground text-xs">
-        vshell 终端为同步阻塞:命令跑完才回传;退出码非 0 时 vshell 不回传输出——需要输出时以 <code>; true</code> 收尾。
-      </p>
-      <ShellTerminal exec={exec} quickOS={current?.OsName?.toLowerCase().includes("win") ? "windows" : "linux"} height="calc(100vh - 22rem)" minHeight={420} />
     </div>
   );
 }
