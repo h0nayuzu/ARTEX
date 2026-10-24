@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
@@ -64,6 +65,25 @@ export function VshellWorkspace({
       cancelled = true;
     };
   }, [id]);
+
+  const autoCheckedRef = React.useRef("");
+  React.useEffect(() => {
+    if (!server || autoCheckedRef.current === server.id) return;
+    autoCheckedRef.current = server.id;
+    void (async () => {
+      setChecking(true);
+      try {
+        await api.vshellCheck(server.id);
+        const items = await api.vshellServers();
+        setServer(items.find((s) => s.id === id) ?? server);
+      } catch {
+        const items = await api.vshellServers().catch(() => [] as VshellServer[]);
+        setServer(items.find((s) => s.id === id) ?? server);
+      } finally {
+        setChecking(false);
+      }
+    })();
+  }, [server, id]);
 
   const check = async () => {
     if (!server) return;
@@ -216,10 +236,18 @@ function VshellDashboard({ server }: { server: VshellServer }) {
     return s === "run" || s === "running" || s === "online" || s === "true" || s === "1" || s === "在线" || s === "启动";
   };
 
+  const usedKeys = new Set(
+    [...sysBars, ...sysKv, ...cfgRows].flatMap((r) => r.keys.map((k) => k.toLowerCase())),
+  );
+  const restEntries = info
+    ? Object.entries(info)
+        .filter(([k, v]) => !usedKeys.has(k.toLowerCase()) && v !== null && v !== "")
+        .slice(0, 80)
+    : [];
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <p className="text-muted-foreground text-sm">站点运行态概览——数据来自 vshell /client/list、/listener/list、/dashboard/info。</p>
+      <div className="flex items-center justify-end">
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
           <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} /> 刷新
         </Button>
@@ -233,29 +261,35 @@ function VshellDashboard({ server }: { server: VshellServer }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">站点信息(dashboard/info)</CardTitle>
+            <CardTitle className="text-base">系统信息</CardTitle>
           </CardHeader>
           <CardContent>
             {info ? (
               <dl className="divide-y text-sm">
-                {Object.entries(info)
-                  .filter(([, v]) => typeof v !== "object")
-                  .map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between py-1.5">
-                      <dt className="text-muted-foreground">{k}</dt>
-                      <dd className="font-mono text-xs">{String(v)}</dd>
+                {sysBars.map((b) => {
+                  const v = lookup(info, b.keys);
+                  if (v === null) return null;
+                  const pct = Math.max(0, Math.min(100, Number(v) || 0));
+                  return (
+                    <div key={b.label} className="py-2">
+                      <div className="mb-1 flex items-center justify-between">
+                        <dt className="text-muted-foreground">{b.label}</dt>
+                        <dd className="font-mono text-xs">{pct}%</dd>
+                      </div>
+                      <Progress value={pct} className="h-1.5" />
                     </div>
-                  ))}
-                {Object.entries(info)
-                  .filter(([, v]) => typeof v === "object")
-                  .map(([k, v]) => (
-                    <div key={k} className="py-1.5">
-                      <dt className="text-muted-foreground mb-1">{k}</dt>
-                      <dd>
-                        <pre className="max-h-32 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10px]">{JSON.stringify(v, null, 2)}</pre>
-                      </dd>
+                  );
+                })}
+                {sysKv.map((row) => {
+                  const v = lookup(info, row.keys);
+                  if (v === null) return null;
+                  return (
+                    <div key={row.label} className="flex items-center justify-between py-2">
+                      <dt className="text-muted-foreground">{row.label}</dt>
+                      <dd className="font-mono text-xs">{row.rate ? fmtRate(Number(v) || 0) : String(v)}</dd>
                     </div>
-                  ))}
+                  );
+                })}
               </dl>
             ) : (
               <p className="text-muted-foreground py-4 text-sm">{loading ? "加载中…" : "dashboard/info 不可用。"}</p>
@@ -264,45 +298,103 @@ function VshellDashboard({ server }: { server: VshellServer }) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">站点配置</CardTitle>
+            <CardTitle className="text-base">配置信息</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="divide-y text-sm">
+              {cfgRows.map((row) => {
+                const v = info ? lookup(info, row.keys) : null;
+                const shown = v !== null ? fmtBool(v) : "—";
+                return (
+                  <div key={row.label} className="flex items-center justify-between py-1.5">
+                    <dt className="text-muted-foreground">{row.label}</dt>
+                    <dd className="font-mono text-xs">{shown}</dd>
+                  </div>
+                );
+              })}
               <div className="flex items-center justify-between py-1.5">
                 <dt className="text-muted-foreground">站点地址</dt>
-                <dd className="font-mono text-xs">{server.base_url}</dd>
-              </div>
-              <div className="flex items-center justify-between py-1.5">
-                <dt className="text-muted-foreground">账号</dt>
-                <dd className="font-mono text-xs">{server.username || "—"}</dd>
-              </div>
-              <div className="flex items-center justify-between py-1.5">
-                <dt className="text-muted-foreground">请求超时</dt>
-                <dd className="font-mono text-xs">{server.timeout_ms}ms</dd>
+                <dd className="max-w-56 truncate font-mono text-xs" title={server.base_url}>
+                  {server.base_url}
+                </dd>
               </div>
               <div className="flex items-center justify-between py-1.5">
                 <dt className="text-muted-foreground">最近检查</dt>
                 <dd className="font-mono text-xs">{server.last_check_at || "—"}</dd>
               </div>
-              <div className="flex items-center justify-between py-1.5">
-                <dt className="text-muted-foreground">最近错误</dt>
-                <dd className="max-w-64 truncate font-mono text-xs" title={server.last_error}>
-                  {server.last_error || "—"}
-                </dd>
-              </div>
-              {server.remark && (
-                <div className="flex items-center justify-between py-1.5">
-                  <dt className="text-muted-foreground">备注</dt>
-                  <dd className="text-xs">{server.remark}</dd>
-                </div>
-              )}
             </dl>
+            {info && restEntries.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-muted-foreground cursor-pointer text-xs select-none">其余字段({restEntries.length})</summary>
+                <dl className="divide-y mt-1 text-xs">
+                  {restEntries.map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between py-1">
+                      <dt className="text-muted-foreground font-mono">{k}</dt>
+                      <dd className="max-w-48 truncate font-mono" title={typeof v === "object" ? JSON.stringify(v) : String(v)}>
+                        {typeof v === "object" ? "{…}" : String(v)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            )}
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
+
+// 仪表盘字段映射:大小写不敏感取第一个命中的 key;命中过的 key 不进「其余字段」。
+function lookup(info: Record<string, unknown>, keys: string[]): string | null {
+  const lower = Object.keys(info).reduce<Record<string, string>>((m, k) => {
+    m[k.toLowerCase()] = k;
+    return m;
+  }, {});
+  for (const k of keys) {
+    const hit = lower[k.toLowerCase()];
+    if (hit !== undefined && info[hit] !== null && info[hit] !== "") return String(info[hit]);
+  }
+  return null;
+}
+
+function fmtBool(v: string) {
+  if (v === "true") return "true";
+  if (v === "false") return "false";
+  return v;
+}
+
+function fmtRate(kbPerSec: number) {
+  if (kbPerSec >= 1024) return `${(kbPerSec / 1024).toFixed(2)} MB/s`;
+  if (kbPerSec >= 1) return `${kbPerSec.toFixed(2)} KB/s`;
+  return `${(kbPerSec * 1024).toFixed(0)} B/s`;
+}
+
+const sysBars = [
+  { keys: ["cpu", "cpupercnt"], label: "处理器" },
+  { keys: ["disk", "diskpercnt"], label: "磁盘" },
+  { keys: ["mem", "mempercnt", "memory"], label: "内存" },
+  { keys: ["virtualmem", "vmem", "virtualmempercnt"], label: "虚拟内存" },
+];
+
+const sysKv = [
+  { keys: ["tcp", "tcpcount", "tcpestablished"], label: "TCP 通讯(已建立)" },
+  { keys: ["udp", "udpcount", "udpestablished"], label: "UDP 通讯(已建立)" },
+  { keys: ["io_send", "iosend", "outflow"], label: "流出带宽", rate: true },
+  { keys: ["io_recv", "iorecv", "inflow"], label: "流入带宽", rate: true },
+];
+
+const cfgRows = [
+  { keys: ["version"], label: "版本" },
+  { keys: ["webport"], label: "WEB端口" },
+  { keys: ["basicauth"], label: "Basic认证" },
+  { keys: ["expiretime", "expire", "expiredate"], label: "授权到期时间" },
+  { keys: ["advancedauth", "advanced"], label: "高级授权" },
+  { keys: ["clientnum", "clientlimit"], label: "授权客户端数量" },
+  { keys: ["iplimit"], label: "IP 上限" },
+  { keys: ["httpproxyport"], label: "HTTP 代理端口" },
+  { keys: ["httpsproxyport"], label: "HTTPS 代理端口" },
+]
 
 // ---------------------------------------------------------------- clients
 
