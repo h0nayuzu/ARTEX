@@ -28,9 +28,9 @@ function fdir(e: VFileItem): boolean {
   return Boolean((e.IsDir ?? e.isDir ?? e.isdir) ?? false);
 }
 
-export function VshellFilesTab({ server }: { server: VshellServer }) {
+export function VshellFilesTab({ server, fixedHostId }: { server: VshellServer; fixedHostId?: string }) {
   const [hosts, setHosts] = React.useState<VshellHost[]>([]);
-  const [hostId, setHostId] = React.useState("");
+  const [hostId, setHostId] = React.useState(fixedHostId ?? "");
   const [dir, setDir] = React.useState("/");
   const [items, setItems] = React.useState<VFileItem[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -40,6 +40,14 @@ export function VshellFilesTab({ server }: { server: VshellServer }) {
   const uploadRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
+    if (fixedHostId) {
+      setHostId(fixedHostId);
+      api
+        .vshellHosts(server.id, false)
+        .then((items) => setHosts(items.filter((h) => String(h.Id) === fixedHostId)))
+        .catch(() => {});
+      return;
+    }
     api
       .vshellHosts(server.id, false)
       .then((items) => {
@@ -48,7 +56,7 @@ export function VshellFilesTab({ server }: { server: VshellServer }) {
         if (first) setHostId(String(first.Id));
       })
       .catch(() => {});
-  }, [server.id]);
+  }, [server.id, fixedHostId]);
 
   const load = React.useCallback(async () => {
     if (!hostId) return;
@@ -125,18 +133,20 @@ export function VshellFilesTab({ server }: { server: VshellServer }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Select value={hostId} onValueChange={setHostId}>
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="选择主机" />
-          </SelectTrigger>
-          <SelectContent>
-            {hosts.map((h) => (
-              <SelectItem key={h.Id} value={String(h.Id)}>
-                #{h.Id} {h.HostName || h.Addr}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!fixedHostId && (
+          <Select value={hostId} onValueChange={setHostId}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="选择主机" />
+            </SelectTrigger>
+            <SelectContent>
+              {hosts.map((h) => (
+                <SelectItem key={h.Id} value={String(h.Id)}>
+                  #{h.Id} {h.HostName || h.Addr}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <Input value={dir} className="font-mono text-xs" onChange={(e) => setDir(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void load()} />
           <Button size="icon" variant="outline" onClick={() => void load()} disabled={loading || !hostId} title="刷新">

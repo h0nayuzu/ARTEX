@@ -1,32 +1,40 @@
 "use client";
 
-// Shell 管理:webshell 连接注册表与 VShell C2 站点两个子系统,顶部标签切换。
+// Shell 管理:列表层(Webshell | VShell 顶部标签)+ 全屏工作台路由。
+// 工作台通过 ?view=ws|vs&id=… 进入,浏览器前进/后退可用。
 import * as React from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { WebshellManager } from "./_components/webshell-manager";
+import { useShellRoute } from "./_components/use-shell-route";
 import { VshellManager } from "./_components/vshell-manager";
-
-type ShellTab = "webshell" | "vshell";
-
-function initialTab(): ShellTab {
-  if (typeof window === "undefined") return "webshell";
-  return new URLSearchParams(window.location.search).get("tab") === "vshell" ? "vshell" : "webshell";
-}
+import { VshellWorkspace } from "./_components/vshell-workspace";
+import { WebshellManager } from "./_components/webshell-manager";
+import { WebshellWorkspace } from "./_components/webshell-workspace";
 
 export default function ShellPage() {
-  const [tab, setTab] = React.useState<ShellTab>(initialTab);
+  const { route, navigate } = useShellRoute();
+
+  if (route.view === "ws" && route.id) {
+    return <WebshellWorkspace id={route.id} onBack={() => navigate({ view: "", id: "" })} />;
+  }
+  if (route.view === "vs" && route.id) {
+    return (
+      <VshellWorkspace
+        id={route.id}
+        sub={route.sub as "dashboard" | "clients" | "listeners" | "tunnels"}
+        host={route.host}
+        hostsub={route.hostsub as "terminal" | "files"}
+        onBack={() => navigate({ view: "", id: "", host: "", hostsub: "terminal" })}
+        onNavigate={navigate}
+      />
+    );
+  }
+
   return (
     <Tabs
-      value={tab}
-      onValueChange={(v) => {
-        setTab(v as ShellTab);
-        // 同步到 URL(静态导出环境用 history API,不触发导航)
-        const url = new URL(window.location.href);
-        url.searchParams.set("tab", v);
-        window.history.replaceState(null, "", url);
-      }}
+      value={route.tab}
+      onValueChange={(v) => navigate({ tab: v as "webshell" | "vshell" })}
       className="flex flex-1 flex-col gap-4"
     >
       <TabsList className="mx-4 lg:mx-6">
@@ -34,10 +42,10 @@ export default function ShellPage() {
         <TabsTrigger value="vshell">VShell 管理</TabsTrigger>
       </TabsList>
       <TabsContent value="webshell" className="mt-0">
-        <WebshellManager />
+        <WebshellManager onOpen={(id) => navigate({ view: "ws", id })} />
       </TabsContent>
       <TabsContent value="vshell" className="mt-0">
-        <VshellManager />
+        <VshellManager onOpen={(id) => navigate({ view: "vs", id, sub: "dashboard", host: "" })} />
       </TabsContent>
     </Tabs>
   );

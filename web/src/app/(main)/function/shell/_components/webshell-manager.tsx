@@ -2,7 +2,7 @@
 
 // Webshell 管理子系统:连接注册表(搜索/协议/状态筛选)+ 工作台(终端/文件/数据库/台账)+ 生成器。
 import * as React from "react";
-import { GlobeIcon, PlusIcon, RefreshCwIcon, SearchIcon, TerminalIcon, Trash2Icon, WrenchIcon, XIcon } from "lucide-react";
+import { PlusIcon, RefreshCwIcon, SearchIcon, TerminalIcon, Trash2Icon, WrenchIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -21,17 +21,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
-import type { ShellOpLog, WebshellConn, WebshellProtocolMeta } from "@/lib/types";
+import type { WebshellConn, WebshellProtocolMeta } from "@/lib/types";
 
 import { WebshellConnDialog } from "./webshell/conn-dialog";
-import { WebshellDBPanel } from "./webshell/db-panel";
-import { WebshellFilePanel } from "./webshell/file-panel";
 import { WebshellGeneratorDialog } from "./webshell/generator-dialog";
-import { ShellTerminal } from "./shell-terminal";
 
 const PROTOCOL_BADGE: Record<string, string> = {
   "dsh-aes": "bg-violet-600",
@@ -51,7 +46,7 @@ const PROTOCOL_LABEL: Record<string, string> = {
   godzilla: "哥斯拉",
 };
 
-export function WebshellManager() {
+export function WebshellManager({ onOpen }: { onOpen: (id: string) => void }) {
   const [conns, setConns] = React.useState<WebshellConn[]>([]);
   const [protocols, setProtocols] = React.useState<WebshellProtocolMeta[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -62,7 +57,6 @@ export function WebshellManager() {
   const [editing, setEditing] = React.useState<WebshellConn | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [generatorOpen, setGeneratorOpen] = React.useState(false);
-  const [active, setActive] = React.useState<WebshellConn | null>(null);
   const [deleting, setDeleting] = React.useState<WebshellConn | null>(null);
   const [probing, setProbing] = React.useState<string | null>(null);
 
@@ -88,7 +82,6 @@ export function WebshellManager() {
       const r = await api.webshellProbe(c.id);
       toast.success(`探活成功 · OS=${r.os}`);
       await load();
-      if (active?.id === c.id) setActive(r.conn ?? c);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "探活失败");
       await load();
@@ -102,7 +95,6 @@ export function WebshellManager() {
       await api.webshellDelete(c.id);
       toast.success("连接已删除(目标上的马不受影响)");
       setDeleting(null);
-      if (active?.id === c.id) setActive(null);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "删除失败");
@@ -214,7 +206,7 @@ export function WebshellManager() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((c) => (
-                    <TableRow key={c.id} className="cursor-pointer" onClick={() => setActive(c)}>
+                    <TableRow key={c.id} className="cursor-pointer" onClick={() => onOpen(c.id)}>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{c.name || "(未命名)"}</span>
@@ -247,7 +239,7 @@ export function WebshellManager() {
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="outline" onClick={() => setActive(c)}>
+                          <Button size="sm" variant="outline" onClick={() => onOpen(c.id)}>
                             工作台
                           </Button>
                           <Button size="sm" variant="ghost" disabled={probing === c.id} onClick={() => void probe(c)}>
@@ -309,104 +301,6 @@ export function WebshellManager() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Sheet open={active !== null} onOpenChange={(o) => !o && setActive(null)}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-4xl">
-          <SheetHeader className="border-b pb-3">
-            <SheetTitle className="flex items-center gap-2">
-              <GlobeIcon className="size-4" /> {active?.name || "webshell"}
-            </SheetTitle>
-            <SheetDescription className="flex flex-wrap items-center gap-2 font-mono text-xs">
-              {active && <Badge className={PROTOCOL_BADGE[active.protocol] ?? ""}>{PROTOCOL_LABEL[active.protocol] ?? active.protocol}</Badge>}
-              <span className="truncate">{active?.url}</span>
-              {active?.os && <span>· {active.os}</span>}
-            </SheetDescription>
-          </SheetHeader>
-          {active && (
-            <div className="flex-1 overflow-auto p-4">
-              <Tabs defaultValue="terminal">
-                <TabsList className="mb-3">
-                  <TabsTrigger value="terminal">终端</TabsTrigger>
-                  <TabsTrigger value="files">文件</TabsTrigger>
-                  <TabsTrigger value="db">数据库</TabsTrigger>
-                  <TabsTrigger value="info">信息 / 台账</TabsTrigger>
-                </TabsList>
-                <TabsContent value="terminal">
-                  <WebshellTerminalTab conn={active} />
-                </TabsContent>
-                <TabsContent value="files">
-                  <WebshellFilePanel conn={active} />
-                </TabsContent>
-                <TabsContent value="db">
-                  <WebshellDBPanel conn={active} />
-                </TabsContent>
-                <TabsContent value="info">
-                  <WebshellInfoTab conn={active} />
-                </TabsContent>
-              </Tabs>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-}
-
-function WebshellTerminalTab({ conn }: { conn: WebshellConn }) {
-  const exec = React.useCallback(
-    async (command: string) => {
-      const r = await api.webshellExec(conn.id, command);
-      return r.output || "(无输出)";
-    },
-    [conn.id],
-  );
-  return <ShellTerminal exec={exec} quickOS={conn.os === "windows" ? "windows" : "linux"} />;
-}
-
-function WebshellInfoTab({ conn }: { conn: WebshellConn }) {
-  const [ops, setOps] = React.useState<ShellOpLog[]>([]);
-  React.useEffect(() => {
-    api.webshellOps(conn.id, 50).then(setOps).catch(() => {});
-  }, [conn.id]);
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <p className="mb-2 text-sm font-medium">基本信息(最近一次探活)</p>
-        <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
-          {conn.basic_info && Object.keys(conn.basic_info).length > 0 ? JSON.stringify(conn.basic_info, null, 2) : "暂无——跑一次「探活」采集。"}
-        </pre>
-      </div>
-      <div>
-        <p className="mb-2 text-sm font-medium">操作台账(最近 50 条,报告门/清痕对账用)</p>
-        <div className="max-h-72 overflow-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-36">时间</TableHead>
-                <TableHead className="w-32">动作</TableHead>
-                <TableHead>详情</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ops.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-muted-foreground py-4 text-center text-xs">
-                    暂无记录
-                  </TableCell>
-                </TableRow>
-              )}
-              {ops.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell className="text-muted-foreground text-xs">{new Date(l.created_at).toLocaleString("zh-CN", { hour12: false })}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.action}</TableCell>
-                  <TableCell className="max-w-96 truncate font-mono text-xs" title={l.detail}>
-                    {l.detail}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 // VShell 管理子系统:站点登记 + 主机/终端/文件/代理隧道/监听/概览 工作台。
 import * as React from "react";
-import { PlusIcon, RadioTowerIcon, RefreshCwIcon, SearchIcon, ServerIcon, Trash2Icon, XIcon } from "lucide-react";
+import { PlusIcon, RefreshCwIcon, SearchIcon, ServerIcon, Trash2Icon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -23,19 +23,11 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import type { VshellServer } from "@/lib/types";
 
-import { VshellHostsTab } from "./vshell/hosts-tab";
-import { VshellTerminalTab } from "./vshell/terminal-tab";
-import { VshellFilesTab } from "./vshell/files-tab";
-import { VshellTunnelsTab } from "./vshell/tunnels-tab";
-import { VshellMiscTab } from "./vshell/misc-tab";
-
-export function VshellManager() {
+export function VshellManager({ onOpen }: { onOpen: (id: string) => void }) {
   const [servers, setServers] = React.useState<VshellServer[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -43,7 +35,6 @@ export function VshellManager() {
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [editing, setEditing] = React.useState<VshellServer | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const [active, setActive] = React.useState<VshellServer | null>(null);
   const [deleting, setDeleting] = React.useState<VshellServer | null>(null);
   const [checking, setChecking] = React.useState<string | null>(null);
 
@@ -81,7 +72,6 @@ export function VshellManager() {
       await api.vshellDelete(s.id);
       toast.success("已删除站点");
       setDeleting(null);
-      if (active?.id === s.id) setActive(null);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "删除失败");
@@ -170,7 +160,7 @@ export function VshellManager() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((s) => (
-                    <TableRow key={s.id} className="cursor-pointer" onClick={() => setActive(s)}>
+                    <TableRow key={s.id} className="cursor-pointer" onClick={() => onOpen(s.id)}>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{s.name || "(未命名)"}</span>
@@ -205,7 +195,7 @@ export function VshellManager() {
                       <TableCell className="text-muted-foreground text-xs">{s.last_check_at || "—"}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="outline" onClick={() => setActive(s)}>
+                          <Button size="sm" variant="outline" onClick={() => onOpen(s.id)}>
                             管理
                           </Button>
                           <Button size="sm" variant="ghost" disabled={checking === s.id} onClick={() => void check(s)}>
@@ -262,48 +252,6 @@ export function VshellManager() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Sheet open={active !== null} onOpenChange={(o) => !o && setActive(null)}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-4xl">
-          <SheetHeader className="border-b pb-3">
-            <SheetTitle className="flex items-center gap-2">
-              <RadioTowerIcon className="size-4" /> {active?.name || "vshell"}
-            </SheetTitle>
-            <SheetDescription className="font-mono text-xs">{active?.base_url}</SheetDescription>
-          </SheetHeader>
-          {active && (
-            <div className="flex-1 overflow-auto p-4">
-              <Tabs defaultValue="hosts">
-                <TabsList className="mb-3">
-                  <TabsTrigger value="hosts">主机</TabsTrigger>
-                  <TabsTrigger value="terminal">终端</TabsTrigger>
-                  <TabsTrigger value="files">文件</TabsTrigger>
-                  <TabsTrigger value="tunnels">代理隧道</TabsTrigger>
-                  <TabsTrigger value="listeners">监听</TabsTrigger>
-                  <TabsTrigger value="overview">概览</TabsTrigger>
-                </TabsList>
-                <TabsContent value="hosts">
-                  <VshellHostsTab server={active} />
-                </TabsContent>
-                <TabsContent value="terminal">
-                  <VshellTerminalTab server={active} />
-                </TabsContent>
-                <TabsContent value="files">
-                  <VshellFilesTab server={active} />
-                </TabsContent>
-                <TabsContent value="tunnels">
-                  <VshellTunnelsTab server={active} />
-                </TabsContent>
-                <TabsContent value="listeners">
-                  <VshellMiscTab server={active} view="listeners" />
-                </TabsContent>
-                <TabsContent value="overview">
-                  <VshellMiscTab server={active} view="overview" />
-                </TabsContent>
-              </Tabs>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
