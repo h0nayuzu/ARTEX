@@ -5,6 +5,7 @@
 import * as React from "react";
 import {
   ArrowLeftIcon,
+  PlusIcon,
   HeadphonesIcon,
   LaptopIcon,
   MonitorSmartphoneIcon,
@@ -18,6 +19,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,10 +30,13 @@ import { api } from "@/lib/api";
 import type { VshellHost, VshellServer } from "@/lib/types";
 
 import { VshellFilesTab } from "./vshell/files-tab";
+import { VshellGeneratorPage, callApi } from "./vshell/generator-page";
+import { VshellListenersPage } from "./vshell/listeners-page";
+import { VshellPluginsPage, VshellSettingsPage } from "./vshell/plugins-page";
 import { VshellTerminalTab } from "./vshell/terminal-tab";
 import { VshellTunnelsTab } from "./vshell/tunnels-tab";
 
-type Sub = "dashboard" | "clients" | "listeners" | "tunnels";
+type Sub = "dashboard" | "clients" | "listeners" | "generator" | "plugins" | "tunnels" | "settings";
 
 export function VshellWorkspace({
   id,
@@ -165,11 +172,14 @@ export function VshellWorkspace({
 
       {/* 子导航(仿原版顶部导航) */}
       <Tabs value={sub} onValueChange={(v) => onNavigate({ sub: v as Sub })} className="gap-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="dashboard">仪表盘</TabsTrigger>
           <TabsTrigger value="clients">客户端管理</TabsTrigger>
           <TabsTrigger value="listeners">监听管理</TabsTrigger>
+          <TabsTrigger value="generator">客户端生成</TabsTrigger>
+          <TabsTrigger value="plugins">插件运行</TabsTrigger>
           <TabsTrigger value="tunnels">隧道代理</TabsTrigger>
+          <TabsTrigger value="settings">系统设置</TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-0">
           <VshellDashboard server={server} />
@@ -178,10 +188,19 @@ export function VshellWorkspace({
           <VshellClients server={server} onOpenHost={(hid, kind) => onNavigate({ host: hid, hostsub: kind })} />
         </TabsContent>
         <TabsContent value="listeners" className="mt-0">
-          <VshellListeners server={server} />
+          <VshellListenersPage server={server} />
+        </TabsContent>
+        <TabsContent value="generator" className="mt-0">
+          <VshellGeneratorPage server={server} />
+        </TabsContent>
+        <TabsContent value="plugins" className="mt-0">
+          <VshellPluginsPage server={server} />
         </TabsContent>
         <TabsContent value="tunnels" className="mt-0">
           <VshellTunnelsTab server={server} />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-0">
+          <VshellSettingsPage server={server} />
         </TabsContent>
       </Tabs>
     </div>
@@ -404,6 +423,7 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
   const [online, setOnline] = React.useState(false);
   const [auto, setAuto] = React.useState(false);
   const [editingRemark, setEditingRemark] = React.useState<{ host: VshellHost; value: string } | null>(null);
+  const [forward, setForward] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -451,7 +471,10 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
           <span className="text-muted-foreground text-xs">
             {hosts.length} 台 · 在线 {hosts.filter((h) => h.IsConnect).length}
           </span>
-          <Button size="sm" variant="outline" className="ml-auto" onClick={() => void load()} disabled={loading}>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setForward(true)}>
+            <PlusIcon className="size-4" /> 正向连接
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCwIcon className={`size-4 ${loading ? "animate-spin" : ""}`} /> 刷新
           </Button>
         </div>
@@ -514,6 +537,8 @@ function VshellClients({ server, onOpenHost }: { server: VshellServer; onOpenHos
           </Table>
         </div>
       </CardContent>
+
+      {forward && <ForwardConnectDialog server={server} onClose={() => setForward(false)} onDone={() => void load()} />}
 
       {editingRemark && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditingRemark(null)}>
@@ -614,5 +639,90 @@ function VshellListeners({ server }: { server: VshellServer }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// 正向连接:让已上线的客户端主动回连 ARTEX 填写的 IP:端口(client/add,字段逐字对齐)。
+function ForwardConnectDialog({ server, onClose, onDone }: { server: VshellServer; onClose: () => void; onDone: () => void }) {
+  const [form, setForm] = React.useState({ ip: "", port: "", tp: "tcp", vkey: "qwe123qwe", salt: "qwe123qwe", proxy: "" });
+  const [busy, setBusy] = React.useState(false);
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+  const save = async () => {
+    if (!form.ip || !form.port) {
+      toast.error("IP 和端口必填");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body: Record<string, unknown> = {
+        ip: form.ip,
+        port: form.port,
+        tp: form.tp,
+        vkey: form.vkey,
+        salt: form.salt,
+      };
+      if (form.proxy) body.proxy = form.proxy;
+      await callApi(server.id, "client/add", body);
+      toast.success("正向连接已下发");
+      onDone();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "下发失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>新增正向客户端</DialogTitle>
+          <DialogDescription>选择一台已上线客户端,让它回连你填写的 IP:端口(需要目标能出网到该地址)。</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="col-span-2 flex flex-col gap-1 text-sm">
+            连接方式
+            <Select value={form.tp} onValueChange={(v) => set({ tp: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tcp">TCP</SelectItem>
+                <SelectItem value="kcp">KCP/UDP</SelectItem>
+                <SelectItem value="ws">WebSocket</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            IP 或域名
+            <Input value={form.ip} placeholder="1.2.3.4" onChange={(e) => set({ ip: e.target.value })} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            端口
+            <Input value={form.port} placeholder="49319" onChange={(e) => set({ port: e.target.value })} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Vkey
+            <Input value={form.vkey} onChange={(e) => set({ vkey: e.target.value })} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            流量加密盐
+            <Input value={form.salt} onChange={(e) => set({ salt: e.target.value })} />
+          </label>
+          <label className="col-span-2 flex flex-col gap-1 text-sm">
+            使用代理(不使用请留空)
+            <Input value={form.proxy} placeholder="socks5://user:pass@1.2.3.4:1080" onChange={(e) => set({ proxy: e.target.value })} />
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button disabled={busy} onClick={() => void save()}>
+            {busy ? "下发中…" : "连接"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

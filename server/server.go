@@ -797,6 +797,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/shell/vshell/{id}/tunnel", s.vshellTunnelAction)
 	mux.HandleFunc("GET /api/shell/vshell/{id}/listeners", s.vshellListeners)
 	mux.HandleFunc("GET /api/shell/vshell/{id}/info", s.vshellInfo)
+	mux.HandleFunc("POST /api/shell/vshell/{id}/api/{endpoint...}", s.vshellGeneric)
+	mux.HandleFunc("GET /api/shell/vshell/{id}/download/{kind}", s.vshellClientDownload)
+	mux.HandleFunc("POST /api/shell/vshell/{id}/runner/upload", s.vshellRunnerUpload)
 
 	mux.HandleFunc("GET /api/exploration/frontier", s.frontier)
 	mux.HandleFunc("GET /api/exploration/findings", s.findings)

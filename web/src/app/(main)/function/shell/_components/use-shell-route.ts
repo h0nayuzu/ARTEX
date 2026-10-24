@@ -24,7 +24,8 @@ function parse(search: string): ShellRoute {
   const tab = q.get("tab") === "vshell" ? "vshell" : "webshell";
   const viewRaw = q.get("view");
   const view = viewRaw === "ws" || viewRaw === "vs" ? viewRaw : "";
-  const sub = ["dashboard", "clients", "listeners", "tunnels"].includes(q.get("sub") ?? "") ? (q.get("sub") as string) : "dashboard";
+  const subRaw = q.get("sub") ?? "";
+  const sub = ["dashboard", "clients", "listeners", "generator", "plugins", "tunnels", "settings"].includes(subRaw) ? subRaw : "dashboard";
   const hostsub = q.get("hostsub") === "files" ? "files" : "terminal";
   return { tab, view, id: q.get("id") ?? "", sub, host: q.get("host") ?? "", hostsub };
 }

