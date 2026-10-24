@@ -85,7 +85,7 @@ export function WebshellWorkspace({ id, onBack }: { id: string; onBack: () => vo
   }
 
   return (
-    <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4 lg:px-6">
+    <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-6 lg:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeftIcon className="size-4" /> 返回列表

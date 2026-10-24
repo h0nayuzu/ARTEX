@@ -126,7 +126,7 @@ export function VshellWorkspace({
   // 聚焦主机子页(终端/文件)
   if (host) {
     return (
-      <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4 lg:px-6">
+      <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-6 lg:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => onNavigate({ host: "", hostsub: "terminal" })}>
             <ArrowLeftIcon className="size-4" /> 客户端管理
@@ -148,7 +148,7 @@ export function VshellWorkspace({
   }
 
   return (
-    <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4 lg:px-6">
+    <div data-content-padding="false" className="flex h-full min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-6 lg:px-6">
       {/* 站点头 */}
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
